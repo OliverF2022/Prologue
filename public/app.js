@@ -1,24 +1,27 @@
-import { normalizeTask, taskFromFields, reopenTask, rememberSubtype } from './task-model.js';
-import { esc, dailyPage, completedPage, completionDialog, subtypeOptions, hourOptions } from './task-view.js';
+import { normalizeTask, taskFromFields, reopenTask, rememberSubtype, localDay, periodBounds, periodStats,
+  periodSeconds, startTimer, stopTimer, totalSeconds, formatElapsed, completeTask, interruptTask, resumeTask,
+  setDailyTime } from './task-model.js';
+import { esc, dailyPage, completedPage, completionDialog, interruptionDialog, subtypeOptions,
+  hourOptions, timerBanner } from './task-view.js';
 const $=s=>document.querySelector(s);
-const day=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-const today=day();let state=await fetch('/api/state').then(r=>r.json()),page='今日记录',period='week',anchor=today;
+const day=localDay;
+let today=day();let state=await fetch('/api/state').then(r=>r.json()),page='今日记录',period='week',anchor=today;
 state.tasks=state.tasks.map(normalizeTask);state.subtypes ||= [];
 let completedFilters={month:today.slice(0,7),category:'',subtype:'',milestones:false};
 const pages=['今日记录','已完成事项','统计洞察','复盘空间','关键复盘'];
 $('#today').textContent=today;$('#nav').innerHTML=pages.map(p=>`<button data-page="${p}">${p}</button>`).join('');
 
-function bounds(kind,date){const d=new Date(date+'T12:00:00');let end;if(kind==='week'){d.setDate(d.getDate()-(d.getDay()+6)%7);end=new Date(d);end.setDate(end.getDate()+7)}else if(kind==='month'){d.setDate(1);end=new Date(d);end.setMonth(end.getMonth()+1)}else{d.setMonth(0,1);end=new Date(d);end.setFullYear(end.getFullYear()+1)}return [day(d),day(end)]}
-function stats(kind,date){const [a,b]=bounds(kind,date),tasks=state.tasks.filter(t=>t.date>=a&&t.date<b),done=tasks.filter(t=>t.done);return {tasks:tasks.length,done:done.length,minutes:state.tasks.filter(t=>t.done>=a&&t.done<b).reduce((s,t)=>s+Number(t.minutes),0),checks:state.tasks.filter(t=>t.kind==='habit'&&t.done>=a&&t.done<b).length}}
-const summary=s=>`<div class="metrics"><article><small>计划完成度</small><strong>${s.tasks?Math.round(s.done/s.tasks*100):0}%</strong><span>${s.done} / ${s.tasks} 项</span></article><article><small>投入时间</small><strong>${s.minutes}</strong><span>分钟</span></article><article><small>打卡成果</small><strong>${s.checks}</strong><span>次打卡</span></article></div>`;
+const bounds=periodBounds;
+function stats(kind,date){return periodStats(state.tasks,kind,date)}
+const summary=s=>`<div class="metrics"><article><small>事项完成率</small><strong>${s.tasks?Math.round(s.done/s.tasks*100):0}%</strong><span>${s.done} / ${s.tasks} 项</span></article><article><small>投入时间</small><strong class="stat-time" data-kind="${s.kind}" data-date="${s.date}">${s.minutes}</strong><span>分钟</span></article><article><small>打卡成果</small><strong>${s.checks}</strong><span>次打卡</span></article></div>`;
 function review(r){return `<article class="review" id="r-${r.id}" style="border-left-color:${['#65745d','#d3904c','#aa6788','#5179b1'].includes(r.color)?r.color:'#65745d'}"><h3>${r.kind==='week'?'周':r.kind==='month'?'月':'年'}复盘 · ${r.date}</h3>${r.kind==='week'?summary(stats('week',r.date)):''}<textarea data-text="${r.id}" placeholder="记录收获、问题和下一步行动…">${esc(r.text)}</textarea>${r.kind==='week'?`<label><input type="checkbox" data-key="${r.id}" ${r.key?'checked':''}>关键复盘</label><select data-color="${r.id}">${['#65745d','#d3904c','#aa6788','#5179b1'].map(c=>`<option ${c===r.color?'selected':''}>${c}</option>`).join('')}</select>`:''}<button data-export="${r.id}">导出 Markdown</button><span class="saved">输入后自动保存</span></article>`}
 function render(){ $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));let html=`<h2>${page}</h2>`;
 if(page==='今日记录')html+=dailyPage(state,today,summary(stats('week',today)));
 if(page==='已完成事项')html+=completedPage(state,completedFilters,today);
-if(page==='统计洞察'){const s=stats(period,anchor);html+=`<div class="toolbar"><select id="period"><option value="week">周</option><option value="month">月</option><option value="year">年</option></select><input id="anchor" type="date" value="${anchor}"></div><p>${bounds(period,anchor).join(' 至 ')}（结束日期不含）</p>${summary(s)}<section><h3>分类投入时间</h3>${state.categories.map(c=>{const[a,b]=bounds(period,anchor),m=state.tasks.filter(t=>t.category===c&&t.done>=a&&t.done<b).reduce((v,t)=>v+Number(t.minutes),0);return `<p>${esc(c)} <b>${m} 分钟</b></p><div class="track"><div style="width:${s.minutes?m/s.minutes*100:0}%"></div></div>`}).join('')}<h3>计划完成比例</h3><meter min="0" max="${s.tasks||1}" value="${s.done}"></meter><h3>打卡次数</h3><p>${s.checks} 次</p><div class="track"><div style="width:${Math.min(100,s.checks*5)}%"></div></div></section>`}
+if(page==='统计洞察'){const s=stats(period,anchor);html+=`<div class="toolbar"><select id="period"><option value="week">周</option><option value="month">月</option><option value="year">年</option></select><input id="anchor" type="date" value="${anchor}"></div><p>${bounds(period,anchor).join(' 至 ')}（结束日期不含）</p>${summary(s)}<section><h3>分类投入时间</h3>${state.categories.map(c=>{const m=Math.floor(periodSeconds(state.tasks.filter(t=>t.category===c),period,anchor)/60);return `<p>${esc(c)} <b data-category-time="${esc(c)}">${m} 分钟</b></p><div class="track"><div data-category-bar="${esc(c)}" style="width:${s.minutes?m/s.minutes*100:0}%"></div></div>`}).join('')}<p class="lead">按实际投入日期统计，包含未完成事项的用时。</p><h3>事项完成比例</h3><meter min="0" max="${s.tasks||1}" value="${s.done}"></meter><h3>打卡次数</h3><p>${s.checks} 次</p><div class="track"><div style="width:${Math.min(100,s.checks*5)}%"></div></div></section>`}
 if(page==='复盘空间'){html+=`<form id="review-form"><select name="kind"><option value="week">周复盘</option><option value="month">月复盘</option><option value="year">年复盘</option></select><input type="date" name="date" required value="${today}"><button class="primary">创建 / 定位复盘</button></form><button id="export-all">批量导出全部复盘</button>`;const years=[...new Set(state.reviews.map(r=>r.date.slice(0,4)))].sort().reverse();html+=years.map(y=>`<section><h3>${y} 年</h3><p>${state.reviews.filter(r=>r.kind==="month"&&r.date.startsWith(y)).map(r=>`<a href="#r-${r.id}">${r.date.slice(0,7)} 月复盘 ↗</a> `).join("")}</p>${state.reviews.filter(r=>r.kind==='year'&&r.date.startsWith(y)).map(review).join('')}${[...new Set(state.reviews.filter(r=>r.date.startsWith(y)&&r.kind!=='year').map(r=>r.date.slice(0,7)))].sort().map(m=>`<details open><summary>${m} 月</summary><p>${state.reviews.filter(r=>r.kind==='week'&&r.date.startsWith(m)).map(r=>`<a href="#r-${r.id}">${r.date} 周复盘 ↗</a> `).join('')}</p>${state.reviews.filter(r=>r.date.startsWith(m)&&r.kind!=='year').sort((a,b)=>a.kind==='month'?-1:a.date.localeCompare(b.date)).map(review).join('')}</details>`).join('')}</section>`).join('')||'<section>创建第一篇复盘，梳理这一段旅程。</section>'}
 if(page==='关键复盘')html+=state.reviews.filter(r=>r.key).map(r=>`<section><a data-jump="${r.id}" href="#r-${r.id}"><span style="color:${esc(r.color)}">●</span> ${r.date} 周复盘 ↗</a><p>${esc(r.text.slice(0,120))}</p><button data-export="${r.id}">导出 Markdown</button></section>`).join('')||'<section>在周复盘中勾选“关键复盘”，把重要的领悟留在这里。</section>';
-$('#app').innerHTML=html+hourOptions;if($('#period'))$('#period').value=period;
+$('#app').innerHTML=timerBanner(state)+html+hourOptions;if($('#period'))$('#period').value=period;
 }
 function download(items){const text=items.map(r=>`# ${r.date} ${r.kind} 复盘\n\n${r.kind==='week'?JSON.stringify(stats('week',r.date))+'\n\n':''}${r.key?'关键复盘\n\n':''}${r.text}`).join('\n\n---\n\n');const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=`Prologue-${today}.md`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 let queue = Promise.resolve();
@@ -41,28 +44,12 @@ function report(error, form) {
   target.textContent = error.message || '保存失败，请重试';
 }
 
+let mutating = false;
 async function commit(next) {
-  await persist(next);
-  state = next;
-  render();
-}
-
-function setCompleted(form, completed) {
-  form.elements.completed.checked = completed;
-  const progress = form.elements.progress;
-  if (progress && !progress.disabled) {
-    if (completed) progress.value = '100';
-    else if (progress.value === '100') progress.value = '0';
-  }
-  const finish = form.querySelector('[data-finish]');
-  finish.hidden = !completed;
-  form.elements.done.disabled = !completed;
-  form.elements.done.required = completed;
-  form.elements.started.required = completed;
-  if (completed && !form.elements.started.value) {
-    const date = form.elements.date?.value || today;
-    form.elements.started.value = date <= today ? date : today;
-  }
+  if(mutating) throw Error('正在保存，请稍后重试');
+  mutating = true;
+  try { await persist(next); state = next; render(); }
+  finally { mutating = false; }
 }
 
 document.addEventListener('click', async event => {
@@ -78,6 +65,21 @@ document.addEventListener('click', async event => {
       $('#completion-dialog').showModal();
     }
     if ('cancelCompletion' in data) $('#completion-dialog').remove();
+    if (data.interrupt) {
+      $('#interruption-dialog')?.remove();
+      $('#app').insertAdjacentHTML('beforeend', interruptionDialog(state.tasks.find(t=>t.id===data.interrupt)));
+      $('#interruption-dialog').showModal();
+    }
+    if ('cancelInterruption' in data) $('#interruption-dialog').remove();
+    const timerId = data.startTime || data.pauseTime || data.resume;
+    if (timerId) {
+      const next = structuredClone(state), now = new Date();
+      if (data.startTime) next.tasks = next.tasks.map(t=>t.id!==timerId && t.activeTimer ? stopTimer(t,now) : t);
+      const index=next.tasks.findIndex(t=>t.id===timerId);
+      next.tasks[index] = data.startTime ? startTimer(next.tasks[index],now)
+        : data.pauseTime ? stopTimer(next.tasks[index],now) : resumeTask(next.tasks[index],now);
+      await commit(next);
+    }
     if (data.reopen) {
       const next = structuredClone(state);
       next.tasks = next.tasks.map(t => t.id === data.reopen ? reopenTask(t) : t);
@@ -100,6 +102,8 @@ document.addEventListener('click', async event => {
 
 document.addEventListener('submit', async event => {
   event.preventDefault();
+  today = day();
+  $('#today').textContent = today;
   const form = event.target;
   const fields = Object.fromEntries(new FormData(form));
   const submitter = event.submitter;
@@ -108,10 +112,16 @@ document.addEventListener('submit', async event => {
   try {
     const next = structuredClone(state);
     let reviewId;
-    if (form.id === 'task-form' || form.dataset.taskEdit || form.dataset.completion) {
-      const id = form.dataset.taskEdit || form.dataset.completion;
+    if (form.id === 'task-form' || form.dataset.taskEdit || form.dataset.completion || form.dataset.interruption || form.dataset.timeEntry) {
+      const id = form.dataset.taskEdit || form.dataset.completion || form.dataset.interruption || form.dataset.timeEntry;
       const previous = id ? next.tasks.find(t => t.id === id) : { id: crypto.randomUUID() };
-      const task = taskFromFields(fields, previous, today);
+      let task;
+      const now = new Date();
+      if (form.dataset.interruption) task=interruptTask(previous,fields.reason,now);
+      else if (form.dataset.timeEntry) task=setDailyTime(previous,fields.timeDate,fields.hours,fields.minutes,today);
+      else if (form.dataset.completion) {
+        task=taskFromFields({...fields,milestone:fields.milestone||''},completeTask(previous,today,now),today,now);
+      } else task=taskFromFields({...fields,milestone:fields.milestone||''},previous,today,now);
       if (id) next.tasks[next.tasks.findIndex(t => t.id === id)] = task;
       else next.tasks.push(task);
       rememberSubtype(next, task.category, task.subtype);
@@ -149,13 +159,14 @@ document.addEventListener('change', async event => {
       form.elements.subtype.value = '';
       form.querySelector('[data-subtype-options]').innerHTML = subtypeOptions(state, el.value);
     }
-    if (el.name === 'kind') {
-      const habit = el.value === 'habit';
-      form.querySelector('[data-progress]').hidden = habit;
-      form.elements.progress.disabled = habit;
-      form.elements.progress.value = form.elements.completed.checked ? '100' : '0';
-    }
-    if (el.name === 'completed') setCompleted(form, el.checked);
+
+  }
+  if (el.name === 'timeDate' && el.value && form?.dataset.timeEntry) {
+    const task=state.tasks.find(t=>t.id===form.dataset.timeEntry);
+    const entry=task.timeEntries.find(e=>e.date===el.value);
+    const minutes=Math.floor((entry?.seconds||0)/60);
+    form.elements.hours.value=String(Math.floor(minutes/60));
+    form.elements.minutes.value=String(minutes%60);
   }
   if (el.name === 'milestone' && form) form.querySelector('[data-milestone-note]').hidden = !el.checked;
   if (el.id === 'completed-month' && el.value) { completedFilters.month = el.value; render(); }
@@ -174,10 +185,6 @@ document.addEventListener('change', async event => {
 
 document.addEventListener('input', event => {
   const el = event.target;
-  if (el.name === 'progress' && el.form && !el.disabled) {
-    if (el.value === '100') setCompleted(el.form, true);
-    else if (Number(el.value) < 100 && el.form.elements.completed.checked) setCompleted(el.form, false);
-  }
   if (el.dataset.text) {
     state.reviews.find(r => r.id === el.dataset.text).text = el.value;
     persist().catch(error => report(error));
@@ -185,4 +192,31 @@ document.addEventListener('input', event => {
 });
 
 render();
-setInterval(() => { if (day() !== today) location.reload(); }, 60000);
+setInterval(() => {
+  const now=new Date(), current=day(now);
+  if(current!==today){today=current;$('#today').textContent=today;render();}
+  if(!state.tasks.some(t=>t.activeTimer))return;
+  document.querySelectorAll('[data-task-time]').forEach(el=>{
+    const task=state.tasks.find(t=>t.id===el.dataset.taskTime);
+    if(task)el.textContent=formatElapsed(totalSeconds(task,now));
+  });
+  document.querySelectorAll('[data-task-today]').forEach(el=>{
+    const task=state.tasks.find(t=>t.id===el.dataset.taskToday);
+    if(task)el.textContent=formatElapsed(stopTimer(task,now).timeEntries.find(e=>e.date===today)?.seconds||0);
+  });
+  document.querySelectorAll('[data-time-row]').forEach(el=>{
+    const task=state.tasks.find(t=>t.id===el.dataset.timeRow);
+    if(task)el.textContent=formatElapsed(stopTimer(task,now).timeEntries.find(e=>e.date===el.dataset.timeDate)?.seconds||0);
+  });
+  document.querySelectorAll('.stat-time').forEach(el=>{
+    el.textContent=String(periodStats(state.tasks,el.dataset.kind,el.dataset.date,now).minutes);
+  });
+  const total=periodSeconds(state.tasks,period,anchor,now);
+  document.querySelectorAll('[data-category-time]').forEach(el=>{
+    el.textContent=Math.floor(periodSeconds(state.tasks.filter(t=>t.category===el.dataset.categoryTime),period,anchor,now)/60)+' 分钟';
+  });
+  document.querySelectorAll('[data-category-bar]').forEach(el=>{
+    const seconds=periodSeconds(state.tasks.filter(t=>t.category===el.dataset.categoryBar),period,anchor,now);
+    el.style.width=(total?seconds/total*100:0)+'%';
+  });
+},1000);

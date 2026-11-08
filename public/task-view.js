@@ -1,4 +1,5 @@
-import { completedTasks, formatDuration, subtypeNames } from './task-model.js';
+import { completedTasks, formatDuration, formatElapsed, subtypeNames, todayTasks, stopTimer,
+  totalSeconds } from './task-model.js';
 
 export const esc = value => String(value ?? '').replace(/[&<>"']/g,
   c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -8,17 +9,33 @@ export function subtypeOptions(state, category) {
   return subtypeNames(state, category).map(s => option(s, s)).join('');
 }
 
-function durationFields(minutes = 30) {
-  return `<fieldset class="duration-fields"><legend>实际耗时</legend>
-    <div class="duration-inputs"><label>小时<input name="hours" type="number" list="hour-options" min="0" max="10000" step="1" required value="${Math.floor(minutes / 60)}"></label>
+function durationFields(minutes = 0) {
+  return `<fieldset class="duration-fields"><legend>当日总用时</legend>
+    <div class="duration-inputs"><label>小时<input name="hours" type="number" list="hour-options" min="0" max="24" step="1" required value="${Math.floor(minutes / 60)}"></label>
     <label>分钟<select name="minutes">${Array.from({ length: 60 }, (_, i) => option(String(i), String(i), String(minutes % 60))).join('')}</select></label></div>
-    <small>小时可选择或手填，分钟可选择。按实际累计投入填写。</small></fieldset>`;
+    <small>按小时和分钟修正当日总时长，保存会替换该日记录。</small></fieldset>`;
 }
 
-function executionFields(task, today) {
-  return `<label>执行开始日期<input type="date" name="started" max="${today}" value="${esc(task.started || '')}" ${task.done ? 'required' : ''}></label>
-    <label class="check-label"><input type="checkbox" name="completed" ${task.done ? 'checked' : ''}>已完成</label>
-    <label data-finish ${task.done ? '' : 'hidden'}>完成日期<input type="date" name="done" max="${today}" value="${esc(task.done || today)}" ${task.done ? 'required' : 'disabled'}></label>`;
+function timeDetails(task, today, now) {
+  const entries = stopTimer(task, now).timeEntries;
+  if(task.activeTimer && !entries.some(e=>e.date===today)) entries.push({date:today,seconds:0});
+  const selectedDate = task.done || today;
+  const selected = entries.find(e => e.date === selectedDate);
+  return `<details class="time-details"><summary>每日用时 / 补记与修正</summary>
+    ${entries.length ? `<ul class="time-history">${[...entries].reverse().map(entry => `<li><time>${esc(entry.date)}</time><span data-time-row="${esc(task.id)}" data-time-date="${esc(entry.date)}">${formatElapsed(entry.seconds)}</span>${entry.legacy ? '<small>旧版总用时（原归属日期）</small>' : ''}</li>`).join('')}</ul>` : '<p>还没有用时记录。开始计时或补记用时后，会在这里按天汇总。</p>'}
+    <form class="entry-form time-entry-form" data-time-entry="${esc(task.id)}">
+      <fieldset class="wide time-entry-fields" ${task.activeTimer ? 'disabled' : ''}>
+        <label>用时日期<input type="date" name="timeDate" required min="${esc(task.started)}" max="${esc(task.done || today)}" value="${esc(selectedDate)}"></label>
+        ${durationFields(Math.floor((selected?.seconds || 0) / 60))}
+        <button class="primary">保存当日用时</button>
+      </fieldset><p class="form-error wide" role="alert"></p>
+      ${task.activeTimer ? '<small class="wide">请先暂停计时，再补记或修正。</small>' : ''}
+    </form></details>`;
+}
+
+function interruptionHistory(task) {
+  if (!task.interruptions.length) return '';
+  return `<details class="interruption-history"><summary>中断记录（${task.interruptions.length} 次）</summary><ol>${task.interruptions.map(record => `<li><b>${esc(record.reason)}</b><p>${esc(new Date(record.at).toLocaleString('zh-CN'))} 中断${record.resumedAt ? ` · ${esc(new Date(record.resumedAt).toLocaleString('zh-CN'))} 恢复` : ' · 等待恢复'}</p></li>`).join('')}</ol></details>`;
 }
 
 function milestoneFields(task) {
@@ -33,23 +50,30 @@ function categoryFields(state, task, suffix) {
 }
 
 function progressField(task) {
-  return `<label data-progress ${task.kind === 'habit' ? 'hidden' : ''}>任务进度（%）<input name="progress" type="number" min="0" max="100" step="1" required value="${task.done ? 100 : (task.progress || 0)}" ${task.kind === 'habit' ? 'disabled' : ''}></label>`;
+  return `<label data-progress ${task.kind === 'habit' ? 'hidden' : ''}>任务进度（%）<input name="progress" type="number" min="0" max="100" step="1" required value="${task.done ? 100 : (task.progress || 0)}" ${task.kind === 'habit' || task.status === 'interrupted' ? 'disabled' : ''}></label>`;
 }
 
-export function taskCard(task, state, today) {
+export function taskCard(task, state, today, now = new Date()) {
+  const todaySeconds = stopTimer(task, now).timeEntries.find(e => e.date === today)?.seconds || 0;
+  const interrupted = task.status === 'interrupted';
   return `<article class="task" data-task-id="${esc(task.id)}">
-    <button type="button" class="completion-toggle" data-${task.done ? 'reopen' : 'complete'}="${esc(task.id)}" aria-label="${task.done ? '撤销完成' : '完成事项'}：${esc(task.title)}">${task.done ? '✓' : '○'}</button>
-    <div class="task-body"><div class="task-heading"><b>${esc(task.title)}</b>${task.milestone ? '<span class="milestone-badge">◆ 里程碑</span>' : ''}</div>
-      <p>${esc(task.category)} / ${esc(task.subtype || '未分类')} · ${task.kind === 'habit' ? '打卡' : '普通任务'} · ${task.done ? '实际耗时' : '已记录耗时'} ${formatDuration(task.minutes)}</p>
-      ${!task.done && task.date < today ? `<p class="rollover">顺延自 ${esc(task.date)}</p>` : ''}
+    <button type="button" class="completion-toggle" data-${task.done ? 'reopen' : 'complete'}="${esc(task.id)}" ${interrupted ? 'disabled title="请先恢复事项"' : ''} aria-label="${task.done ? '撤销完成' : '完成事项'}：${esc(task.title)}">${task.done ? '✓' : '○'}</button>
+    <div class="task-body"><div class="task-heading"><b>${esc(task.title)}</b><span class="status-badge ${interrupted ? 'interrupted' : ''}">${task.done ? '已完成' : interrupted ? '已中断' : task.activeTimer ? '计时中' : '进行中'}</span>${task.milestone ? '<span class="milestone-badge">◆ 里程碑</span>' : ''}</div>
+      <p>${esc(task.category)} / ${esc(task.subtype || '未分类')} · ${task.kind === 'habit' ? '打卡' : '普通任务'}</p>
+      <p class="time-summary">累计实际用时 <strong data-task-time="${esc(task.id)}">${formatElapsed(totalSeconds(task, now))}</strong> · 今日 <span data-task-today="${esc(task.id)}">${formatElapsed(todaySeconds)}</span></p>
+      ${!task.done && task.started < today ? '<p class="rollover">未完成，今日继续可见</p>' : ''}
       ${task.kind !== 'habit' ? `<div class="task-progress"><progress max="100" value="${task.progress}" aria-label="任务进度"></progress><span>${task.progress}%</span></div>` : ''}
-      ${task.done ? `<p>执行日期：<time>${esc(task.started)}</time> 至 <time>${esc(task.done)}</time></p>` : ''}
+      <p>开始日期：<time>${esc(task.started)}</time>${task.done ? ` · 完成日期：<time>${esc(task.done)}</time>` : ''}</p>
+      ${interrupted ? `<p class="interruption-reason">中断理由：${esc(task.interruptions.at(-1)?.reason)}</p>` : ''}
+      ${!task.done ? `<div class="task-actions">${interrupted ? `<button type="button" data-resume="${esc(task.id)}">恢复事项</button>` : `<button type="button" data-${task.activeTimer ? 'pause-time' : 'start-time'}="${esc(task.id)}">${task.activeTimer ? '暂停计时' : '开始计时'}</button><button type="button" data-interrupt="${esc(task.id)}">中断事项</button>`}</div>` : ''}
+      ${task.activeTimer ? '<p class="timer-help">计时会持续到暂停、中断或完成；关闭页面后仍会累计。跨天自动按日拆分。</p>' : ''}
       ${task.milestone && task.milestoneNote ? `<p class="milestone-note">${esc(task.milestoneNote)}</p>` : ''}
+      ${timeDetails(task, today, now)}${interruptionHistory(task)}
       <details class="task-editor"><summary>编辑事项${task.kind === 'habit' ? '' : ' / 进度'}</summary>
         <form class="entry-form" data-task-edit="${esc(task.id)}" aria-label="编辑 ${esc(task.title)}">
           <label class="wide">事项名称<input name="title" required maxlength="200" value="${esc(task.title)}"></label>
           ${categoryFields(state, task, task.id)}${progressField(task)}
-          ${executionFields(task, today)}${durationFields(task.minutes)}${milestoneFields(task)}
+          <small class="wide">创建当天自动开始，完成当天自动结束。进度填到 100% 即标记完成。</small>${milestoneFields(task)}
           <p class="form-error wide" role="alert"></p><div class="wide"><button class="primary">保存修改</button></div>
         </form>
       </details>
@@ -59,14 +83,13 @@ export function taskCard(task, state, today) {
 
 export function dailyPage(state, today, summary) {
   const initial = { category: state.categories[0], kind: 'task', progress: 0 };
-  const entries = state.tasks.filter(t => t.date <= today && (!t.done || t.done === today));
+  const entries = todayTasks(state.tasks, today);
   return `<p class="lead">把今天的专注，变成明天的积累。</p>${summary}
     <section><h3>添加事项</h3><form id="task-form" class="entry-form">
       <label class="wide">事项名称<input name="title" required maxlength="200" placeholder="今天想完成什么？"></label>
       ${categoryFields(state, initial, 'new')}
       <label>事项类型<select name="kind"><option value="task">普通任务</option><option value="habit">打卡事项</option></select></label>
-      <label>计划日期<input type="date" name="date" value="${today}" required></label>
-      ${progressField(initial)}${executionFields(initial, today)}${durationFields()}${milestoneFields(initial)}
+      <small class="wide">创建当天自动作为开始日期。创建后可以更新进度、计时或中断；未完成事项次日继续可见。</small>
       <p class="form-error wide" role="alert"></p><div class="wide"><button class="primary">添加事项</button></div>
     </form>
     <details class="category-manager"><summary>管理主类型 / 子类型</summary>
@@ -83,7 +106,7 @@ export function completedPage(state, filters, today) {
   const subtypes = filters.category ? subtypeNames(state, filters.category)
     : [...new Set(categories.flatMap(c => subtypeNames(state, c)))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
   const matches = completedTasks(state.tasks, filters);
-  const total = matches.reduce((sum, t) => sum + t.minutes, 0);
+  const total = Math.floor(matches.reduce((sum, t) => sum + totalSeconds(t), 0) / 60);
   const groups = categories.map(category => {
     const entries = matches.filter(t => t.category === category);
     return entries.length ? `<section class="completed-group"><h3>${esc(category)} <small>${entries.length} 项</small></h3>${entries.map(t => taskCard(t, state, today)).join('')}</section>` : '';
@@ -96,21 +119,29 @@ export function completedPage(state, filters, today) {
       <label class="check-label"><input type="checkbox" id="only-milestones" ${filters.milestones ? 'checked' : ''}>仅看里程碑</label>
       <button type="button" id="reset-completed">重置筛选</button></div>
       <p class="filter-summary" role="status">共 ${matches.length} 项 · 实际耗时 ${formatDuration(total)} · ${matches.filter(t => t.milestone).length} 个里程碑</p>
-      <small>按完成日期归属月份；跨月任务的实际耗时计入完成月。</small></section>
+      <small>按完成日期归属月份，列表显示事项累计用时；统计页面按实际投入日期计算。</small></section>
     ${groups || '<section class="empty-state">当前筛选条件下没有已完成事项，可调整月份或类型。</section>'}`;
 }
 
 export function completionDialog(task, today) {
-  const started = task.started || (task.date < today ? task.date : today);
   return `<dialog id="completion-dialog" aria-labelledby="completion-title"><h3 id="completion-title">完成事项 · ${esc(task.title)}</h3>
-    <p>确认执行日期与实际耗时，记录这一步成果。</p>
+    <p>开始日期 ${esc(task.started)} · 完成日期 ${today}</p><p>累计实际用时 <strong data-task-time="${esc(task.id)}">${formatElapsed(totalSeconds(task))}</strong>。完成后自动停止计时。</p>
     <form class="entry-form" data-completion="${esc(task.id)}">
-      <input name="completed" type="hidden" value="on">
-      <label>执行开始日期<input name="started" type="date" required max="${today}" value="${esc(started)}"></label>
-      <label>完成日期<input name="done" type="date" required max="${today}" value="${today}"></label>
-      ${durationFields(task.minutes)}${milestoneFields(task)}
+      ${milestoneFields(task)}
       <p class="form-error wide" role="alert"></p><div class="dialog-actions wide"><button type="button" data-cancel-completion>取消</button><button class="primary">确认完成</button></div>
     </form></dialog>`;
 }
 
-export const hourOptions = `<datalist id="hour-options">${[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 48, 72, 100].map(h => option(String(h), String(h))).join('')}</datalist>`;
+export function interruptionDialog(task) {
+  return `<dialog id="interruption-dialog" aria-labelledby="interruption-title"><h3 id="interruption-title">中断事项 · ${esc(task.title)}</h3>
+    <p>中断会停止计时，保留已有进度和用时。之后可以恢复。</p>
+    <form data-interruption="${esc(task.id)}"><label>中断理由（必填）<textarea name="reason" maxlength="1000" required placeholder="说明为什么需要中断"></textarea></label>
+      <p class="form-error" role="alert"></p><div class="dialog-actions"><button type="button" data-cancel-interruption>取消</button><button class="primary">确认中断</button></div></form></dialog>`;
+}
+
+export function timerBanner(state) {
+  const task = state.tasks.find(t => t.activeTimer);
+  return task ? `<div class="timer-banner" role="status"><span>正在计时：${esc(task.title)} · 累计 <strong data-task-time="${esc(task.id)}">${formatElapsed(totalSeconds(task))}</strong></span><button type="button" data-pause-time="${esc(task.id)}">暂停计时</button></div>` : '';
+}
+
+export const hourOptions = `<datalist id="hour-options">${[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24].map(h => option(String(h), String(h))).join('')}</datalist>`;

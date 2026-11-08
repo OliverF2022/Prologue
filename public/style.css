@@ -49,3 +49,29 @@ button:disabled{opacity:.6;cursor:wait}
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid #718767;outline-offset:3px}
 @media(max-width:1000px){.entry-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:540px){.entry-form{grid-template-columns:minmax(0,1fr)}.duration-fields{grid-column:1}.task{padding:16px 12px;gap:10px}.task .delete-task{padding:6px}.duration-inputs{flex-wrap:wrap}.toolbar>label{width:100%}dialog .entry-form{grid-template-columns:minmax(0,1fr)}dialog .duration-fields{grid-column:1}header{letter-spacing:0}main{padding:20px 4%}.metrics article{padding:12px}.metrics strong{font-size:24px}.task-editor .duration-inputs label{min-width:90px}}
+:root{--timer-green:#eaf0e4}
+.status-badge{background:#eaf0e4;color:#53684e;font-size:11px;border-radius:5px;padding:4px 8px;white-space:nowrap}
+.status-badge.interrupted{background:#f9e9dc;color:#9b6335}
+.task-actions{display:flex;gap:10px;margin:16px 0;flex-wrap:wrap}
+.task-actions button{font-size:12px}
+.task p.interruption-reason{color:#9b6335;white-space:pre-wrap;border-left:2px solid #dba77d;padding-left:12px}
+.time-summary strong{font-weight:600;color:#53684e}
+.time-details,.interruption-history{padding:14px 0 0;margin-top:14px}
+.time-details summary,.interruption-history summary{font-size:13px;font-weight:400;color:#53684e}
+.time-entry-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:end;border:0;padding:0;margin:0;min-width:0}
+.time-entry-fields>label{display:flex;flex-direction:column;gap:8px;font-size:13px;align-self:start}
+.time-entry-fields .duration-fields{grid-column:span 1}
+.time-entry-fields>button{justify-self:start}
+.time-entry-fields:disabled{opacity:.55}
+.time-history{list-style:none;padding:0;margin:16px 0}
+.time-history li{display:flex;gap:16px;flex-wrap:wrap;border-bottom:1px solid #edf0e9;padding:10px 0;font-size:12px}
+.time-history time{min-width:90px;color:#788371}
+.time-history small{color:#9b8564}
+.interruption-history li{font-size:13px;line-height:1.7;margin-bottom:12px}
+.interruption-history li b{white-space:pre-wrap;overflow-wrap:anywhere;font-weight:500}
+.timer-banner{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 18px;background:var(--timer-green);border:1px solid #d5dfcc;border-radius:10px;margin:20px 0;font-size:13px}
+.timer-banner span{overflow-wrap:anywhere}
+.timer-banner button{flex-shrink:0;font-size:12px}
+.completion-toggle:disabled{cursor:not-allowed}
+.task .timer-help{color:#788371;font-size:11px}
+@media(max-width:540px){.time-entry-fields{grid-template-columns:minmax(0,1fr)}.timer-banner{align-items:flex-start;flex-wrap:wrap}}

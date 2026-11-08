@@ -4,6 +4,7 @@ import {spawn} from 'node:child_process';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {normalizeTask} from '../public/task-model.js';
 test('HTTP serves workspace and persists API state',async()=>{
  const dataDir=await mkdtemp(join(tmpdir(),'prologue-test-'));
  const child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:'3039',DATA_DIR:dataDir}});
@@ -12,7 +13,7 @@ test('HTTP serves workspace and persists API state',async()=>{
  const state=await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json());assert.ok(Array.isArray(state.tasks));
  const blocked=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',headers:{Origin:'http://evil.test'},body:JSON.stringify(state)});assert.equal(blocked.status,403);
  state.subtypes=[{category:'工作',name:'开发'}];
- state.tasks.push({id:'roundtrip',title:'阶段交付',category:'工作',subtype:'开发',kind:'task',date:'2026-10-28',started:'2026-10-29',done:'2026-11-05',minutes:200,progress:100,milestone:true,milestoneNote:'首次发布'});
+ state.tasks.push(normalizeTask({id:'roundtrip',title:'阶段交付',category:'工作',subtype:'开发',kind:'task',date:'2026-10-28',started:'2026-10-29',done:'2026-11-05',minutes:200,progress:100,milestone:true,milestoneNote:'首次发布'}));
  const saved=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(state)});assert.equal(saved.status,200);
  assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
  assert.deepEqual(JSON.parse(await readFile(join(dataDir,'store.json'),'utf8')),state);

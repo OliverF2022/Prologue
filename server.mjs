@@ -19,6 +19,7 @@ if(req.headers.origin && req.headers.origin!==`http://${req.headers.host}`){res.
 let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>5000000)throw Error('数据过大')}
 const next=JSON.parse(raw);if(!Array.isArray(next.tasks)||!Array.isArray(next.categories)||!Array.isArray(next.reviews))throw Error('无效数据');
 next.tasks=next.tasks.map(t=>validateTask({...normalizeTask(t),progress:t.progress??(t.done?100:0)}));
+if(next.tasks.filter(t=>t.activeTimer).length>1)throw Error('同时只能为一个事项计时');
 next.subtypes ||= [];
 if(!next.categories.every(c=>typeof c==='string'&&c.trim()&&c.length<=80)||!Array.isArray(next.subtypes)||!next.subtypes.every(s=>typeof s.name==='string'&&s.name.trim()&&s.name.length<=80&&next.categories.includes(s.category)))throw Error('无效类型');
 if(!next.tasks.every(t=>next.categories.includes(t.category)))throw Error('事项主类型不存在');
