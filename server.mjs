@@ -30,3 +30,12 @@ res.setHeader('Cache-Control','no-store');
 res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript; charset=utf-8':name.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8');res.end(await readFile(root+'public/'+name));
 }catch(e){res.writeHead(400);res.end(JSON.stringify({error:e.message}))}});
 server.listen(Number(process.env.PORT)||3030,'127.0.0.1',()=>console.log('Prologue: http://127.0.0.1:'+(process.env.PORT||3030)));
+let shuttingDown=false;
+function shutdown(){
+if(shuttingDown)return;
+shuttingDown=true;
+server.close(async()=>{try{await writes;process.exit(0)}catch{process.exit(1)}});
+setTimeout(()=>process.exit(1),10000).unref();
+}
+process.on('SIGINT',shutdown);
+process.on('SIGTERM',shutdown);

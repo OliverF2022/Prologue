@@ -12,6 +12,8 @@ node server.mjs
 
 浏览器打开 http://127.0.0.1:3030 。服务仅监听本机。可通过 PORT 环境变量更换端口。
 
+也可安装为 Windows 系统服务，开机自动启动，无需保持终端打开。工具与运行时放在 `D:\dev`，数据保留原位；安装需要管理员授权。详见 [Windows 服务安装和管理](docs/windows-service.md)。
+
 ## 功能与口径
 
 - 每日事项支持自建主类型和归属主类型的子类型、普通任务、打卡事项，支持编辑、完成/撤销和删除。
@@ -64,6 +66,8 @@ node server.mjs
 ```
 
 Open http://127.0.0.1:3030 in your browser. The server listens on localhost only. Set the `PORT` environment variable to change the port.
+
+For automatic startup independent of a terminal or Codex, install it as a Windows service. Tools and the runtime live under `D:\dev`; data stays in the project. Installation requires Administrator authorization. See [Windows service setup and management](docs/windows-service.md).
 
 ### Features and reporting rules
 
