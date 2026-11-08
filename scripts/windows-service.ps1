@@ -4,10 +4,12 @@ param(
     [ValidateSet('Prepare', 'Install', 'Start', 'Stop', 'Restart', 'Status', 'Uninstall')]
     [string]$Action = 'Status',
     [string]$DevRoot = 'D:\dev',
-    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
+    [string]$ProjectRoot = '',
+    [int]$ReplaceProcessId = 0
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $ProjectRoot) { $ProjectRoot = Split-Path -Parent $PSScriptRoot }
 $serviceName = 'Prologue'
 $serviceDirectory = Join-Path $DevRoot 'services\Prologue'
 $wrapper = Join-Path $serviceDirectory 'Prologue.exe'
@@ -128,8 +130,18 @@ try {
     }
     if ($Action -eq 'Install') {
         if (-not $existingService) {
-            if (Get-NetTCPConnection -LocalPort 3030 -State Listen -ErrorAction SilentlyContinue) {
-                throw 'Port 3030 is already in use. Stop the existing local server before installing the service.'
+            $listeners = @(Get-NetTCPConnection -LocalPort 3030 -State Listen -ErrorAction SilentlyContinue)
+            if ($listeners.Count) {
+                # Replace only the explicitly selected standalone process after elevation succeeds.
+                $standalone = Get-CimInstance Win32_Process -Filter "ProcessId=$ReplaceProcessId"
+                $serverPath = Join-Path $receipt.projectRoot 'server.mjs'
+                if ($ReplaceProcessId -le 0 -or -not $standalone -or
+                    $standalone.ExecutablePath -ne $receipt.node -or
+                    $standalone.CommandLine.IndexOf($serverPath, [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+                    @($listeners | Where-Object { $_.OwningProcess -ne $ReplaceProcessId }).Count) {
+                    throw 'Port 3030 is already in use. Stop the existing local server before installing the service.'
+                }
+                Invoke-Checked 'taskkill.exe' @('/PID', [string]$ReplaceProcessId, '/F')
             }
             # The service runs without administrator privileges; only data and logs are writable.
             Invoke-Checked 'icacls.exe' @($DevRoot, '/grant', '*S-1-5-19:RX')
