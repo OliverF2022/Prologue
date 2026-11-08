@@ -1,2 +1,42 @@
-# Prologue
-A daily tracking, analytics, and hierarchical Markdown journaling system with auto-rollover tasks and achievement boards.
+# Prologue · 日有所记
+
+本机个人每日记录与复盘应用。
+
+## 启动
+
+需要 Node.js 24 或更高版本，无需安装第三方依赖。
+
+```powershell
+node server.mjs
+```
+
+浏览器打开 http://127.0.0.1:3030 。服务仅监听本机。可通过 PORT 环境变量更换端口。
+
+## 功能与口径
+
+- 每日事项支持自建类型、普通任务、打卡事项、日期和分钟数，支持完成/撤销和删除。
+- 未完成的过期事项自动在今日显示，保留原始计划日期。服务关闭期间不需要后台任务。
+- 打卡为每日独立事项，完成后计一次；下一天需新建当天打卡。
+- 已完成事项按自建类型展示。
+- 周/月/年切换查看所选周期的分类用时图、计划完成率及打卡次数。用时为手动录入的分钟数；完成用时和打卡次数按完成日期归属，完成率按原计划日期归属。
+- 复盘按年→月→周排列，可创建每级复盘，周复盘含统计概要；月年复盘不汇总。周一为每周开始，跨月周属于周一所在月。
+- 复盘文本自动保存；周复盘可标记关键并选择颜色，在关键复盘页面定位原文。
+- 每篇复盘可导出 Markdown，也可一次导出全部复盘。
+
+## 数据
+
+数据位于 `data/store.json`，不提交到 Git。停止服务后复制此文件即可备份。数据保存在服务端，不受浏览器清理缓存影响。当前是个人本机版本，不提供账号、远程访问或多进程并发写入。
+
+## 开发工具目录规划
+
+复用系统中已有的 Node.js，本次未安装任何工具。以后新增工具安装至 `D:\dev\tools`，下载缓存置于 `D:\dev\downloads`，包管理器缓存置于 `D:\dev\cache`。需要安装 C 盘前先征得同意。
+
+## 验证
+
+```powershell
+node --check server.mjs
+node --check public/app.js
+node --test
+```
+
+架构与日期规则见 [docs/design.md](docs/design.md)。
