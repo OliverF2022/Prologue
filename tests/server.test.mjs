@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {normalizeTask} from '../public/task-model.js';
+import {normalizeTask, taskFromFields, setDailyTime, startTimer, localDay} from '../public/task-model.js';
 test('HTTP serves workspace and persists API state',async()=>{
  const dataDir=await mkdtemp(join(tmpdir(),'prologue-test-'));
  const child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:'3039',DATA_DIR:dataDir}});
@@ -14,8 +14,15 @@ test('HTTP serves workspace and persists API state',async()=>{
  const blocked=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',headers:{Origin:'http://evil.test'},body:JSON.stringify(state)});assert.equal(blocked.status,403);
  state.subtypes=[{category:'工作',name:'开发'}];
  state.tasks.push(normalizeTask({id:'roundtrip',title:'阶段交付',category:'工作',subtype:'开发',kind:'task',date:'2026-10-28',started:'2026-10-29',done:'2026-11-05',minutes:200,progress:100,milestone:true,milestoneNote:'首次发布'}));
+ const today=localDay(),now=new Date();
+ const running=startTimer(setDailyTime(taskFromFields({title:'进行中计时',category:'工作',kind:'task'},{id:'running'},today),today,'0','20',today),now);
+ state.tasks.push(running);
  const saved=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(state)});assert.equal(saved.status,200);
  assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
+ const noReason=structuredClone(state);Object.assign(noReason.tasks[1],{activeTimer:null,status:'interrupted',interruptions:[{at:now.toISOString(),reason:' ',resumedAt:null}]});
+ assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(noReason)})).status,400);
+ const twoTimers=structuredClone(state);twoTimers.tasks.push({...running,id:'running2'});
+ assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(twoTimers)})).status,400);
  assert.deepEqual(JSON.parse(await readFile(join(dataDir,'store.json'),'utf8')),state);
  const invalid=structuredClone(state);invalid.tasks[0].started='2026-11-06';
  assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(invalid)})).status,400);
