@@ -40,3 +40,47 @@ node --test
 ```
 
 架构与日期规则见 [docs/design.md](docs/design.md)。
+
+---
+
+## English
+
+Prologue is a local personal daily tracker with task rollover, achievement views, analytics, and hierarchical reviews.
+
+### Run locally
+
+Requires Node.js 24 or later. No third-party dependencies are required.
+
+```powershell
+node server.mjs
+```
+
+Open http://127.0.0.1:3030 in your browser. The server listens on localhost only. Set the `PORT` environment variable to change the port.
+
+### Features and reporting rules
+
+- Create custom categories and dated tasks or check-in entries. Mark entries complete, undo completion, or delete them.
+- The time field defaults to **30 minutes**. It is manually entered task duration, used in time statistics when the entry is completed; it is not a countdown timer.
+- Overdue unfinished entries appear in today's list while retaining their original planned dates. No scheduled background process is needed.
+- Each check-in is a separate daily entry. Create a new entry for the next day; completing it counts as one check-in.
+- Browse completed entries grouped by category.
+- Select a week, month, or year to see category time charts, planned-task completion rate, and check-in counts. Completed duration and check-ins belong to the completion date; completion rate groups entries by their original planned dates.
+- Reviews are organized by year, month, and week. Weekly reviews include a brief statistical overview; monthly and yearly reviews do not. Weeks start on Monday and belong to the month containing that Monday.
+- Review text saves automatically. Flag weekly reviews as key reviews, choose a color, and navigate to them from a dedicated page.
+- Export one review or all reviews together as Markdown.
+
+### Storage and backup
+
+Records are stored in `data/store.json`, which is excluded from Git. Stop the server before copying this file for backup. Clearing browser storage does not remove these records. This version is for personal local use and has no accounts, remote access, or support for concurrent writes from multiple server processes.
+
+### Development
+
+Reuse the existing Node.js runtime. Install future tools under `D:\dev\tools`, downloads under `D:\dev\downloads`, and package-manager caches under `D:\dev\cache`. Obtain approval before installing anything on drive C.
+
+```powershell
+node --check server.mjs
+node --check public/app.js
+node --test
+```
+
+See [architecture and date rules](docs/design.md) for implementation decisions.
