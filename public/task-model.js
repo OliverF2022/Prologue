@@ -1,3 +1,4 @@
+import { aggregateEntries, runningSessions, validateSessions } from './time-model.js';
 export function isDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -13,8 +14,10 @@ const secondsTotal = entries => entries.reduce((sum, entry) => sum + entry.secon
 export function normalizeTask(task) {
   const minutes = Number(task.minutes ?? 0);
   const started = task.started || (task.done && task.done < task.date ? task.done : task.date);
-  const timeEntries = Array.isArray(task.timeEntries) ? task.timeEntries :
-    (minutes > 0 ? [{ date: task.done || started, seconds: Math.round(minutes * 60), legacy: true }] : []);
+  const untimedEntries = task.untimedEntries ?? (Array.isArray(task.timeEntries) ? task.timeEntries :
+    (minutes > 0 ? [{ date: task.done || started, seconds: Math.round(minutes * 60), legacy: true }] : []));
+  const sessions = task.sessions || [];
+  const timeEntries = aggregateEntries(untimedEntries, sessions);
   return {
     ...task,
     subtype: task.subtype || '',
@@ -25,6 +28,8 @@ export function normalizeTask(task) {
     milestone: Boolean(task.milestone),
     milestoneNote: task.milestoneNote || '',
     timeEntries,
+    untimedEntries,
+    sessions,
     activeTimer: task.activeTimer || null,
     status: task.done ? 'completed' : (task.status === 'interrupted' ? 'interrupted' : 'active'),
     interruptions: task.interruptions || [],
@@ -67,6 +72,7 @@ export function validateTask(task) {
       || task.milestoneNote.length > 1000) throw Error('里程碑备注不能超过 1000 字');
   if (!['active', 'interrupted', 'completed'].includes(task.status)
       || Boolean(task.done) !== (task.status === 'completed')) throw Error('事项状态无效');
+  validateSessions(task);
   if (!Array.isArray(task.timeEntries)) throw Error('每日用时记录无效');
   const dates = new Set();
   for (const entry of task.timeEntries) {
@@ -114,7 +120,8 @@ export function reopenTask(task) {
     progress: task.kind === 'habit' ? 0 : Math.min(99, task.previousProgress || 0) };
 }
 
-function updateTotal(task) {
+export function updateTotal(task) {
+  task.timeEntries = aggregateEntries(task.untimedEntries, task.sessions);
   task.minutes = Math.floor(secondsTotal(task.timeEntries) / 60);
   return task;
 }
@@ -123,18 +130,8 @@ function updateTotal(task) {
 export function stopTimer(task, now = new Date()) {
   const next = structuredClone(task);
   if (!next.activeTimer) return next;
-  let cursor = Date.parse(next.activeTimer);
-  const end = Math.max(cursor, new Date(now).getTime());
-  if (!Number.isFinite(end)) throw Error('计时时间无效');
-  while (cursor < end) {
-    const date = localDay(cursor), midnight = new Date(cursor);
-    midnight.setHours(24, 0, 0, 0);
-    const boundary = Math.min(midnight.getTime(), end);
-    let entry = next.timeEntries.find(e => e.date === date);
-    if (!entry) { entry = { date, seconds: 0 }; next.timeEntries.push(entry); }
-    entry.seconds += (boundary - cursor) / 1000;
-    cursor = boundary;
-  }
+  const session = runningSessions(next, now).find(s=>s.running);
+  if (session) { const { running, ...record } = session; next.sessions.push(record); }
   next.activeTimer = null;
   next.timeEntries.sort((a, b) => a.date.localeCompare(b.date));
   return updateTotal(next);
@@ -182,11 +179,11 @@ export function setDailyTime(task, date, hours, minutes, today) {
   const seconds = durationMinutes(hours, minutes) * 60;
   if (seconds > 86400) throw Error('每日用时不能超过 24 小时');
   const next = structuredClone(task);
-  const index = next.timeEntries.findIndex(e => e.date === date);
+  if (next.sessions.some(s => aggregateEntries([], [s]).some(e=>e.date===date))) throw Error('此日已有时间段，请修改具体时段');
+  const index = next.untimedEntries.findIndex(e => e.date === date);
   const entry = { date, seconds };
-  if (index < 0) next.timeEntries.push(entry);
-  else next.timeEntries[index] = entry;
-  next.timeEntries.sort((a, b) => a.date.localeCompare(b.date));
+  if (index < 0) next.untimedEntries.push(entry);
+  else next.untimedEntries[index] = entry;
   return validateTask(updateTotal(next));
 }
 

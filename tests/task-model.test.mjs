@@ -19,7 +19,7 @@ test('creation assigns today and zero time, ignoring supplied date and duration 
 });
 
 test('legacy migration preserves all recorded minutes and dates without inventing daily history', () => {
-  const legacy = normalizeTask({ ...create(), timeEntries:undefined, started:undefined,
+  const legacy = normalizeTask({ ...create(), timeEntries:undefined, untimedEntries:undefined, sessions:undefined, started:undefined,
     date:'2026-10-28', done:'2026-11-05', minutes:'90', subtype:undefined });
   assert.equal(legacy.progress, 100);
   assert.equal(legacy.minutes, 90);
