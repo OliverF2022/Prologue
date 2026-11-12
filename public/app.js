@@ -214,7 +214,6 @@ render();
 setInterval(() => {
   const now=new Date(), current=day(now);
   if(current!==today){today=current;$('#today').textContent=today;render();}
-  if(!state.tasks.some(t=>t.activeTimer))return;
   document.querySelectorAll('[data-task-time]').forEach(el=>{
     const task=state.tasks.find(t=>t.id===el.dataset.taskTime);
     if(task)el.textContent=formatElapsed(totalSeconds(task,now));
