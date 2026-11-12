@@ -1,3 +1,5 @@
+import { runningSessions } from './time-model.js';
+import { todayTimeCharts } from './time-charts.js';
 import { completedTasks, formatDuration, formatElapsed, subtypeNames, todayTasks, stopTimer,
   totalSeconds } from './task-model.js';
 
@@ -9,28 +11,17 @@ export function subtypeOptions(state, category) {
   return subtypeNames(state, category).map(s => option(s, s)).join('');
 }
 
-function durationFields(minutes = 0) {
-  return `<fieldset class="duration-fields"><legend>当日总用时</legend>
-    <div class="duration-inputs"><label>小时<input name="hours" type="number" list="hour-options" min="0" max="24" step="1" required value="${Math.floor(minutes / 60)}"></label>
-    <label>分钟<select name="minutes">${Array.from({ length: 60 }, (_, i) => option(String(i), String(i), String(minutes % 60))).join('')}</select></label></div>
-    <small>按小时和分钟修正当日总时长，保存会替换该日记录。</small></fieldset>`;
-}
-
 function timeDetails(task, today, now) {
-  const entries = stopTimer(task, now).timeEntries;
-  if(task.activeTimer && !entries.some(e=>e.date===today)) entries.push({date:today,seconds:0});
-  const selectedDate = task.done || today;
-  const selected = entries.find(e => e.date === selectedDate);
-  return `<details class="time-details"><summary>每日用时 / 补记与修正</summary>
-    ${entries.length ? `<ul class="time-history">${[...entries].reverse().map(entry => `<li><time>${esc(entry.date)}</time><span data-time-row="${esc(task.id)}" data-time-date="${esc(entry.date)}">${formatElapsed(entry.seconds)}</span>${entry.legacy ? '<small>旧版总用时（原归属日期）</small>' : ''}</li>`).join('')}</ul>` : '<p>还没有用时记录。开始计时或补记用时后，会在这里按天汇总。</p>'}
-    <form class="entry-form time-entry-form" data-time-entry="${esc(task.id)}">
-      <fieldset class="wide time-entry-fields" ${task.activeTimer ? 'disabled' : ''}>
-        <label>用时日期<input type="date" name="timeDate" required min="${esc(task.started)}" max="${esc(task.done || today)}" value="${esc(selectedDate)}"></label>
-        ${durationFields(Math.floor((selected?.seconds || 0) / 60))}
-        <button class="primary">保存当日用时</button>
-      </fieldset><p class="form-error wide" role="alert"></p>
-      ${task.activeTimer ? '<small class="wide">请先暂停计时，再补记或修正。</small>' : ''}
-    </form></details>`;
+  const entries=stopTimer(task,now).timeEntries;
+  const sessions=runningSessions(task,now).sort((a,b)=>Date.parse(b.start)-Date.parse(a.start));
+  return `<details class="time-details"><summary>时间段明细 / 手动修改</summary>
+    <p class="chart-note">计时器自动保存起止时间，也可手动补记或修改。跨整点与跨天会自动拆分统计。</p>
+    <ul class="session-list">${sessions.map(session=>`<li><div><b>${esc(new Date(session.start).toLocaleString('zh-CN'))} — ${esc(new Date(session.end).toLocaleString('zh-CN'))}</b><p>${formatElapsed((Date.parse(session.end)-Date.parse(session.start))/1000)} · ${session.source==='timer'?'计时器':'手动记录'}</p></div>${session.running?'<small>计时中，暂停后可修改</small>':`<button type="button" data-edit-session="${esc(task.id)}" data-session-id="${esc(session.id)}" ${task.activeTimer?'disabled':''}>修改</button><button type="button" data-delete-session="${esc(task.id)}" data-session-id="${esc(session.id)}" ${task.activeTimer?'disabled':''}>删除时段</button>`}</li>`).join('')||'<li>暂无具体时间段。</li>'}</ul>
+    <button type="button" data-add-session="${esc(task.id)}" ${task.activeTimer?'disabled':''}>补记时间段</button>
+    ${task.activeTimer?'<small>请先暂停计时，再手动修改。</small>':''}
+    <details class="daily-totals"><summary>每日累计用时</summary><ul class="time-history">${entries.map(e=>`<li>${e.date}<span>${formatElapsed(e.seconds)}</span></li>`).join('')||'<li>暂无用时。</li>'}</ul></details>
+    ${task.untimedEntries.length?`<p class="chart-note">旧版未定位用时：</p><ul class="time-history">${task.untimedEntries.map(e=>`<li>${e.date} · ${formatElapsed(e.seconds)}<button type="button" data-delete-untimed="${esc(task.id)}" data-date="${e.date}">移除旧汇总</button></li>`).join('')}</ul>`:''}
+  </details>`;
 }
 
 function interruptionHistory(task) {
@@ -81,7 +72,7 @@ export function taskCard(task, state, today, now = new Date()) {
   </article>`;
 }
 
-export function dailyPage(state, today, summary) {
+export function dailyPage(state, today, summary, chartMode='pie') {
   const initial = { category: state.categories[0], kind: 'task', progress: 0 };
   const entries = todayTasks(state.tasks, today);
   return `<p class="lead">把今天的专注，变成明天的积累。</p>${summary}
@@ -97,6 +88,7 @@ export function dailyPage(state, today, summary) {
       <form id="subtype-form"><label>所属主类型<select name="category">${state.categories.map(c => option(c, c)).join('')}</select></label><label>新子类型<input name="name" required maxlength="80" placeholder="如：项目开发、阅读"></label><button>添加子类型</button></form>
       <p>${state.categories.map(c => `${esc(c)}：${subtypeNames(state, c).map(esc).join('、') || '暂无子类型'}`).join('； ')}</p>
     </details></section>
+    <section id="today-time-charts">${todayTimeCharts(state.tasks,today,chartMode)}</section>
     <h3>今日与待办 <small>${entries.length} 项</small></h3>
     ${entries.map(t => taskCard(t, state, today)).join('') || '<section class="empty-state">今天还没有事项，开始记录吧。</section>'}`;
 }
@@ -137,6 +129,23 @@ export function interruptionDialog(task) {
     <p>中断会停止计时，保留已有进度和用时。之后可以恢复。</p>
     <form data-interruption="${esc(task.id)}"><label>中断理由（必填）<textarea name="reason" maxlength="1000" required placeholder="说明为什么需要中断"></textarea></label>
       <p class="form-error" role="alert"></p><div class="dialog-actions"><button type="button" data-cancel-interruption>取消</button><button class="primary">确认中断</button></div></form></dialog>`;
+}
+
+function localInput(value) {
+  const d=new Date(value),pad=v=>String(v).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+export function sessionDialog(task, session, now=new Date()) {
+  const last=task.done?Math.min(new Date(task.done+'T23:59:59').getTime(),now.getTime()):now.getTime();
+  const first=Math.max(new Date(task.started+'T00:00:00').getTime(),last-30*60*1000);
+  return `<dialog id="session-dialog" aria-labelledby="session-title"><h3 id="session-title">${session?'修改':'补记'}时间段 · ${esc(task.title)}</h3>
+    <p class="chart-note">使用本机时间。时长根据起止时间自动计算；时段不能重叠，也不能晚于当前时间。</p>
+    <form class="entry-form" data-session-form="${esc(task.id)}" data-session-id="${esc(session?.id||'')}">
+      <label>开始时间<input type="datetime-local" name="start" required step="1" value="${localInput(session?.start||first)}"></label>
+      <label>结束时间<input type="datetime-local" name="end" required step="1" value="${localInput(session?.end||last)}"></label>
+      <p class="form-error wide" role="alert"></p><div class="dialog-actions wide"><button type="button" data-cancel-session>取消</button><button class="primary">保存时间段</button></div>
+    </form></dialog>`;
 }
 
 export function timerBanner(state) {

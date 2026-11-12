@@ -4,7 +4,8 @@ import {spawn} from 'node:child_process';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {normalizeTask, taskFromFields, setDailyTime, startTimer, localDay} from '../public/task-model.js';
+import {normalizeTask, taskFromFields, setDailyTime, startTimer, localDay, updateTotal} from '../public/task-model.js';
+import {editSession} from '../public/time-model.js';
 test('HTTP serves workspace and persists API state',async()=>{
  const dataDir=await mkdtemp(join(tmpdir(),'prologue-test-'));
  const child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:'3039',DATA_DIR:dataDir}});
@@ -17,12 +18,20 @@ test('HTTP serves workspace and persists API state',async()=>{
  const today=localDay(),now=new Date();
  const running=startTimer(setDailyTime(taskFromFields({title:'进行中计时',category:'工作',kind:'task'},{id:'running'},today),today,'0','20',today),now);
  state.tasks.push(running);
+ const manual=updateTotal(editSession(taskFromFields({title:'手动时间段',category:'工作',kind:'task'},{id:'manual'},today),
+   {start:new Date(now.getTime()-120000),end:new Date(now.getTime()-60000)},'manual-session',now));
+ state.tasks.push(manual);
  const saved=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(state)});assert.equal(saved.status,200);
  assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
+ const stale={...state,generation:'before-reset'};
+ assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(stale)})).status,409);
  const noReason=structuredClone(state);Object.assign(noReason.tasks[1],{activeTimer:null,status:'interrupted',interruptions:[{at:now.toISOString(),reason:' ',resumedAt:null}]});
  assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(noReason)})).status,400);
  const twoTimers=structuredClone(state);twoTimers.tasks.push({...running,id:'running2'});
  assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(twoTimers)})).status,400);
+ const overlapping=structuredClone(state);overlapping.tasks.push({...manual,id:'overlap'});
+ assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(overlapping)})).status,400);
+ for(const module of ['time-model.js','time-analytics.js','time-charts.js']) assert.equal((await fetch('http://127.0.0.1:3039/'+module)).status,200);
  assert.deepEqual(JSON.parse(await readFile(join(dataDir,'store.json'),'utf8')),state);
  const invalid=structuredClone(state);invalid.tasks[0].started='2026-11-06';
  assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(invalid)})).status,400);

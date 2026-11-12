@@ -19,7 +19,9 @@ node server.mjs
 - 每日事项支持自建主类型和归属主类型的子类型、普通任务、打卡事项，支持编辑、完成/撤销和删除。
 - 添加事项只需填写名称、主类型、子类型和事项类型。创建当天自动作为开始日期，实际用时从零开始；点击完成或将进度填到 100% 时，当天自动作为结束日期。
 - 事项创建后可“开始计时 / 暂停计时”，累计实际投入，并按本机时区自动跨天拆分。一次只为一个事项计时，切换会暂停上一项。开始计时后，关闭页面或重启服务仍会累计，直到暂停、中断或完成。
-- 可在“每日用时 / 补记与修正”中按小时、分钟修正某日总用时，保存会替换该日记录，不会重复叠加。修改时须先暂停计时；日期须处于开始至结束之间且不晚于今天，每日手填用时不超过 24 小时。累计用时由每日记录自动汇总。
+- 计时器会保存具体开始和结束时间。在“时间段明细 / 手动修改”中可补记、修改或删除时段，耗时自动计算。修改前须暂停本事项计时，时段不能重叠或晚于当前时间。跨整点、跨天的部分分别进入对应小时和日期。
+- 今日页面可切换任务饼图和按小时堆叠柱状图，并查看每项任务的实际执行时段。“其他”指当天已过去但未记录的时间，“尚未到来”单独显示。
+- 统计页面支持周／月每个小时段（00–23）的累计投入柱状图，以及每日投入柱状图：周按周一至周日，月按当月每日排列。所有图表附可展开的数据表。
 - 普通任务创建后支持手填 0–100% 的进度并展示进度条。填到 100% 自动完成；降低已完成任务的进度会撤销完成。打卡事项只记录完成状态。
 - 允许中断事项，必须填写非空理由；中断停止计时并保留用时、进度和中断历史。恢复后可继续工作，再次开始计时需点击“开始计时”。
 - 未完成事项（含已中断事项）第二天继续可见，保留原开始日期，不复制新任务。
@@ -28,6 +30,7 @@ node server.mjs
 - 可在编辑或完成事项时标记里程碑并添加选填备注。创建或编辑事项时可直接输入新子类型，也可在“管理主类型 / 子类型”中预先建立。
 - 周/月/年切换查看所选周期的分类用时图、事项完成率及打卡次数。投入时间按每日用时记录归属，包含未完成事项；打卡按完成日期归属，完成率按开始日期归属。跨月事项的耗时按实际记录日期分别进入各月。
 - 复盘按年→月→周排列，可创建每级复盘，周复盘含统计概要；月年复盘不汇总。周一为每周开始，跨月周属于周一所在月。
+- 周／月复盘自动生成总投入、各事项用时、高投入小时段、小时分布及每日投入的文字统计，Markdown 导出同时包含统计和手写总结。
 - 复盘文本自动保存；周复盘可标记关键并选择颜色，在关键复盘页面定位原文。
 - 每篇复盘可导出 Markdown，也可一次导出全部复盘。
 
@@ -73,7 +76,9 @@ For automatic startup independent of a terminal or Codex, install it as a Window
 
 - Create entries with a name, parent category, optional child subtype, and task/check-in type. The creation day automatically becomes the start date; completion day becomes the end date. New entries start with zero recorded duration. Dates and duration are absent from the creation form.
 - Start or pause a timer after creation. Elapsed time splits automatically at local midnight and accumulates by day. Only one timer runs at a time; switching tasks pauses the previous timer. A running timer continues across page closure and server restarts until paused, interrupted, or completed.
-- Add or correct a day's total using hours and minutes under “每日用时 / 补记与修正” (Daily time / corrections). Saving replaces that day's record. Pause the timer before editing. Dates must be within the task's execution range and no later than today; manual daily totals are limited to 24 hours. Total duration is calculated automatically from daily records.
+- Timers preserve exact start/end timestamps. Add, edit, or delete manual intervals under “时间段明细 / 手动修改” (Time intervals / edits); duration is calculated automatically. Pause the task before editing. Intervals must not overlap or extend into the future, and are split at clock-hour and day boundaries.
+- Today offers a task pie chart, stacked hourly bars, and an execution-interval table. Unrecorded elapsed time and future time are separate pie slices.
+- Weekly/monthly reports include cumulative 00–23 hourly bars and daily bars (Monday–Sunday for weeks; every date for months), with expandable data tables.
 - Ordinary tasks have editable progress from 0–100% after creation. Entering 100% completes the task today; lowering progress on a completed task reopens it. Check-ins only have a completion status.
 - Interrupting an entry requires a nonblank reason, stops its timer, and retains progress, recorded effort, and interruption history. Resume the entry when ready; restart timing explicitly.
 - Unfinished and interrupted entries remain visible the next day with the same start date, without creating duplicates.
@@ -82,6 +87,7 @@ For automatic startup independent of a terminal or Codex, install it as a Window
 - Mark entries as milestones with an optional note when editing or completing them. Enter a new subtype when creating or editing, or create it in advance under “管理主类型 / 子类型” (Manage categories / subtypes).
 - Select a week, month, or year for category time charts, completion rate, and check-in counts. Time belongs to the day it was recorded, including unfinished work. Check-ins belong to the completion date; completion rate groups entries by start date. Effort spanning months is attributed to its respective recorded days.
 - Reviews are organized by year, month, and week. Weekly reviews include a brief statistical overview; monthly and yearly reviews do not. Weeks start on Monday and belong to the month containing that Monday.
+- Weekly and monthly reviews automatically include textual totals, per-task durations, high-investment hours, hourly distribution, and daily totals. Markdown exports contain both these statistics and your written reflection.
 - Review text saves automatically. Flag weekly reviews as key reviews, choose a color, and navigate to them from a dedicated page.
 - Export one review or all reviews together as Markdown.
 
@@ -102,3 +108,5 @@ node --test
 ```
 
 See [architecture and date rules](docs/design.md) for implementation decisions.
+
+详细统计口径见 [时间段和图表说明 / Time intervals and charts](docs/time-slots.md)。

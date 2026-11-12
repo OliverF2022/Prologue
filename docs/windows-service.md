@@ -55,6 +55,14 @@ Set-Location D:\proj\myown\Prologue
 .\scripts\windows-service.ps1 -Action Uninstall
 ```
 
+重新安装并备份、清空正式记录（仅在需要重新开始时执行）：
+
+```powershell
+.\scripts\windows-service.ps1 -Action Reinstall -ResetData
+```
+
+原数据备份在 `D:\dev\services\Prologue\backups`。不传 `ResetData` 的重新安装保留数据。重置后应刷新已打开的页面。详见 [时间段统计与重置说明](time-slots.md)。
+
 安装或管理结果写入 `D:\dev\services\Prologue\install-result.json`。启动失败时检查该文件及 `logs` 中的错误日志。运行中的计时仍遵循应用规则：持续到暂停、中断或完成，服务重启不会丢失计时起点。
 
 ## English
