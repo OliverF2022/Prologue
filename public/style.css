@@ -90,3 +90,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .session-list{list-style:none;padding:0;margin:14px 0}.session-list li{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #edf0e9;padding:12px 0}.session-list li div{min-width:200px}.session-list b{font-size:12px;font-weight:500}.session-list button{font-size:11px;padding:6px 10px}.daily-totals{margin-top:20px;padding:12px 0}.daily-totals summary{font-size:12px;font-weight:400}
 .review-time-summary{padding:16px 20px;background:#f5f7f1;border-radius:10px;margin:20px 0}.review-time-summary h4{margin:0 0 10px}.review-time-summary pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:12px;line-height:1.9;color:#63715d;max-height:360px;overflow:auto;margin:0}
 @media(max-width:600px){.pie-layout{grid-template-columns:minmax(0,1fr);gap:8px}.time-pie{justify-self:center}.chart-switch{margin-bottom:6px}section{padding:18px}.chart-legend li{max-width:100%}.review-time-summary{padding:14px}}
+.demo-banner{display:flex;justify-content:space-between;align-items:center;gap:18px;background:#fff4d8;border:1px solid #e5ce98;border-radius:12px;padding:18px 22px;margin:22px 0;color:#79622f}
+.demo-banner b{font-size:14px}.demo-banner p{font-size:12px;line-height:1.8;margin:7px 0 0;letter-spacing:0}.demo-banner button{font-size:12px;white-space:nowrap;flex-shrink:0}
+header{gap:12px;flex-wrap:wrap}#mode-link{font-size:12px;letter-spacing:0}
+@media(max-width:600px){.demo-banner{align-items:flex-start;flex-direction:column;padding:16px}}

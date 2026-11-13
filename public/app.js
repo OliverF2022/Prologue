@@ -8,12 +8,15 @@ import { esc, dailyPage, completedPage, completionDialog, interruptionDialog, su
   hourOptions, timerBanner, sessionDialog } from './task-view.js';
 const $=s=>document.querySelector(s);
 const day=localDay;
-let today=day();let state=await fetch('/api/state').then(r=>r.json()),page='今日记录',period='week',anchor=today;
+const isDemo=new URLSearchParams(location.search).get('demo')==='1';
+const stateUrl=isDemo?'/api/demo/state':'/api/state';
+let today=day();let state=await fetch(stateUrl).then(r=>r.json()),page='今日记录',period='week',anchor=today;
 state.tasks=state.tasks.map(normalizeTask);state.subtypes ||= [];
 let dailyChartMode='pie',lastChartUpdate=0;
 let completedFilters={month:today.slice(0,7),category:'',subtype:'',milestones:false};
 const pages=['今日记录','已完成事项','统计洞察','复盘空间','关键复盘'];
-$('#today').textContent=today;$('#nav').innerHTML=pages.map(p=>`<button data-page="${p}">${p}</button>`).join('');
+$('#today').textContent=today;
+$('#mode-link').textContent=isDemo?'返回正式记录':'查看演示';$('#mode-link').href=isDemo?'/':'/?demo=1';$('#nav').innerHTML=pages.map(p=>`<button data-page="${p}">${p}</button>`).join('');
 
 const bounds=periodBounds;
 function stats(kind,date){return periodStats(state.tasks,kind,date)}
@@ -25,7 +28,7 @@ if(page==='已完成事项')html+=completedPage(state,completedFilters,today);
 if(page==='统计洞察'){const s=stats(period,anchor);html+=`<div class="toolbar"><select id="period"><option value="week">周</option><option value="month">月</option><option value="year">年</option></select><input id="anchor" type="date" value="${anchor}"></div><p>${bounds(period,anchor).join(' 至 ')}（结束日期不含）</p>${summary(s)}<section id="period-time-charts">${periodTimeCharts(state.tasks,period,anchor)}</section><section><h3>分类投入时间</h3>${state.categories.map(c=>{const m=Math.floor(periodSeconds(state.tasks.filter(t=>t.category===c),period,anchor)/60);return `<p>${esc(c)} <b data-category-time="${esc(c)}">${m} 分钟</b></p><div class="track"><div data-category-bar="${esc(c)}" style="width:${s.minutes?m/s.minutes*100:0}%"></div></div>`}).join('')}<p class="lead">按实际投入日期统计，包含未完成事项的用时。</p><h3>事项完成比例</h3><meter min="0" max="${s.tasks||1}" value="${s.done}"></meter><h3>打卡次数</h3><p>${s.checks} 次</p><div class="track"><div style="width:${Math.min(100,s.checks*5)}%"></div></div></section>`}
 if(page==='复盘空间'){html+=`<form id="review-form"><select name="kind"><option value="week">周复盘</option><option value="month">月复盘</option><option value="year">年复盘</option></select><input type="date" name="date" required value="${today}"><button class="primary">创建 / 定位复盘</button></form><button id="export-all">批量导出全部复盘</button>`;const years=[...new Set(state.reviews.map(r=>r.date.slice(0,4)))].sort().reverse();html+=years.map(y=>`<section><h3>${y} 年</h3><p>${state.reviews.filter(r=>r.kind==="month"&&r.date.startsWith(y)).map(r=>`<a href="#r-${r.id}">${r.date.slice(0,7)} 月复盘 ↗</a> `).join("")}</p>${state.reviews.filter(r=>r.kind==='year'&&r.date.startsWith(y)).map(review).join('')}${[...new Set(state.reviews.filter(r=>r.date.startsWith(y)&&r.kind!=='year').map(r=>r.date.slice(0,7)))].sort().map(m=>`<details open><summary>${m} 月</summary><p>${state.reviews.filter(r=>r.kind==='week'&&r.date.startsWith(m)).map(r=>`<a href="#r-${r.id}">${r.date} 周复盘 ↗</a> `).join('')}</p>${state.reviews.filter(r=>r.date.startsWith(m)&&r.kind!=='year').sort((a,b)=>a.kind==='month'?-1:a.date.localeCompare(b.date)).map(review).join('')}</details>`).join('')}</section>`).join('')||'<section>创建第一篇复盘，梳理这一段旅程。</section>'}
 if(page==='关键复盘')html+=state.reviews.filter(r=>r.key).map(r=>`<section><a data-jump="${r.id}" href="#r-${r.id}"><span style="color:${esc(r.color)}">●</span> ${r.date} 周复盘 ↗</a><p>${esc(r.text.slice(0,120))}</p><button data-export="${r.id}">导出 Markdown</button></section>`).join('')||'<section>在周复盘中勾选“关键复盘”，把重要的领悟留在这里。</section>';
-$('#app').innerHTML=timerBanner(state)+html+hourOptions;if($('#period'))$('#period').value=period;
+$('#app').innerHTML=(isDemo?`<div class="demo-banner" role="note"><div><b>演示模式 · 全部为假数据</b><p>可自由体验计时、时段修改、统计与复盘。演示记录与正式数据独立保存。样例日期：${esc(state.demoAnchorDate)}</p></div><button type="button" id="reset-demo">恢复示例</button></div>`:'')+timerBanner(state)+html+hourOptions;if($('#period'))$('#period').value=period;
 }
 function download(items){
   const text=items.map(r=>reviewMarkdown(r,state.tasks)).join('\n\n---\n\n');
@@ -37,7 +40,7 @@ function persist(next = state) {
   validateTimeState(next.tasks);
   const body = JSON.stringify(next);
   const request = queue.catch(() => {}).then(async () => {
-    const response = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+    const response = await fetch(stateUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
       throw Error(result.error || '保存失败，请重试');
@@ -67,6 +70,13 @@ document.addEventListener('click', async event => {
   const data = button.dataset;
   try {
     if (data.page) { page = data.page; render(); }
+    if (button.id==='reset-demo'&&isDemo) {
+      if(mutating)throw Error('正在保存，请稍后重试');
+      await queue.catch(()=>{});
+      const response=await fetch('/api/demo/reset',{method:'POST'});
+      if(!response.ok)throw Error('恢复演示数据失败，请重试');
+      state=await response.json();render();
+    }
     if (data.dayChart) { dailyChartMode=data.dayChart; $('#today-time-charts').innerHTML=todayTimeCharts(state.tasks,today,dailyChartMode); }
     if (data.addSession || data.editSession) {
       const task=state.tasks.find(t=>t.id===(data.addSession||data.editSession));

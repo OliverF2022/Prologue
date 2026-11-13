@@ -38,5 +38,17 @@ test('HTTP serves workspace and persists API state',async()=>{
  assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
  assert.match(await fetch('http://127.0.0.1:3039/task-model.js').then(r=>r.text()),/taskFromFields/);
  assert.equal((await fetch('http://127.0.0.1:3039/unknown')).status,404);
+ assert.equal((await fetch('http://127.0.0.1:3039/?demo=1')).status,200);
+ const demo=await fetch('http://127.0.0.1:3039/api/demo/state').then(r=>r.json());
+ assert.equal(demo.demo,true);assert.ok(demo.tasks.length>40);assert.notEqual(demo.generation,state.generation);
+ demo.tasks[0].title='[演示] 修改后的示例';
+ assert.equal((await fetch('http://127.0.0.1:3039/api/demo/state',{method:'PUT',body:JSON.stringify(demo)})).status,200);
+ assert.equal((await fetch('http://127.0.0.1:3039/api/demo/state').then(r=>r.json())).tasks[0].title,demo.tasks[0].title);
+ assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
+ assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(demo)})).status,409);
+ const restored=await fetch('http://127.0.0.1:3039/api/demo/reset',{method:'POST'}).then(r=>r.json());
+ assert.notEqual(restored.generation,demo.generation);
+ assert.equal((await fetch('http://127.0.0.1:3039/api/demo/state',{method:'PUT',body:JSON.stringify(demo)})).status,409);
+ assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
  }finally{const exited=new Promise(resolve=>child.once('exit',resolve));child.kill();await exited;await rm(dataDir,{recursive:true,force:true})}
 });

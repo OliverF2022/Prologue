@@ -2,6 +2,8 @@
 
 本机个人每日记录与复盘应用。
 
+查看 [演示模式](http://127.0.0.1:3030/?demo=1)：包含最近一个月的假任务、具体用时段、打卡、里程碑、中断与分层复盘。演示内容有醒目标记，使用独立的 `data/demo/store.json`，可自由修改或点击“恢复示例”，不会污染正式记录。页面右上角可返回正式模式。
+
 ## 启动
 
 需要 Node.js 24 或更高版本，无需安装第三方依赖。
@@ -59,6 +61,8 @@ node --test
 ## English
 
 Prologue is a local personal daily tracker with task rollover, achievement views, analytics, and hierarchical reviews.
+
+Open [Demo mode](http://127.0.0.1:3030/?demo=1) for a month of clearly labeled synthetic tasks, time intervals, check-ins, milestones, interruptions, and reviews. Demo edits use a separate `data/demo/store.json` and never change real records. “恢复示例” restores the sample dataset; the header link returns to real records.
 
 ### Run locally
 
