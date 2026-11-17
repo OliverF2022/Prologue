@@ -2,16 +2,17 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {timeReport,filterStatisticsTasks,periodOutcomes,statisticsTimeDetails} from '../public/time-analytics.js';
 import {statisticsPage,statisticsCharts,statisticsDialog} from '../public/statistics-view.js';
+import {normalizeTask} from '../public/task-model.js';
 
 const at=(day,hour=0,minute=0)=>new Date(2026,10,day,hour,minute).toISOString();
 const now=new Date(at(12,12));
 const session=(id,day,h,m,endH,endM=0)=>({id,start:at(day,h,m),end:at(day,endH,endM),source:'manual'});
 function fixtures(){return [
-  {id:'work',title:'开发 <img>',category:'工作',subtype:'项目',kind:'task',date:'2026-10-01',done:'2026-11-10',milestone:true,milestoneNote:'交付 <script>',sessions:[session('a',9,9,30,10,15),session('b',9,10,15,10,30),{id:'c',start:at(10,23,30),end:at(11,0,30),source:'timer'}],untimedEntries:[{date:'2026-11-09',seconds:600}],interruptions:[{at:at(9,11),reason:'等待 <确认>',resumedAt:at(9,12)},{at:at(10,11),reason:'切换'},{at:at(16,11),reason:'下周'}]},
+  {id:'work',title:'开发 <img>',category:'工作',subtype:'项目',kind:'task',date:'2026-10-01',done:'2026-11-11',milestone:true,milestoneNote:'交付 <script>',sessions:[session('a',9,9,30,10,15),session('b',9,10,15,10,30),{id:'c',start:at(10,23,30),end:at(11,0,30),source:'timer'}],untimedEntries:[{date:'2026-11-09',seconds:600}],interruptions:[{at:at(9,11),reason:'等待 <确认>',resumedAt:at(9,12)},{at:at(10,11),reason:'切换'},{at:at(16,11),reason:'下周'}]},
   {id:'study',title:'阅读',category:'学习',subtype:'读书',kind:'habit',date:'2026-11-09',done:'2026-11-11',sessions:[session('d',10,9,0,10)],untimedEntries:[],interruptions:[]},
   {id:'unfinished',title:'继续',category:'工作',subtype:'',kind:'task',date:'2026-11-09',done:null,milestone:true,sessions:[],untimedEntries:[],interruptions:[]},
-  {id:'old',title:'旧成果',category:'生活',subtype:'',kind:'task',date:'2026-11-09',done:'2026-11-08',sessions:[],untimedEntries:[],interruptions:[]}
-];}
+  {id:'old',title:'旧成果',category:'生活',subtype:'',kind:'task',date:'2026-10-28',done:'2026-11-08',sessions:[],untimedEntries:[],interruptions:[]}
+].map(normalizeTask);}
 
 test('daily heat buckets and category stacks conserve exact recorded time including legacy totals',()=>{
   const tasks=fixtures(),before=JSON.stringify(tasks),r=timeReport(tasks,'week','2026-11-12',now);
@@ -56,6 +57,7 @@ test('statistics renders full date axes, future cells, stable category colors an
   assert.match(week,/data-stack-category="工作"/);assert.match(week,/100.0%/);assert.match(week,/1 个事项/);
   assert.match(week,/旧版未定位用时/);
   assert.match(week,/本期开始事项的当前完成率/);
+  assert.match(week,/50%（1 \/ 2 项，含打卡）/);
   const month=statisticsCharts(tasks,categories,'month','2026-11-12',now);
   assert.equal((month.match(/data-heat-date=/g)||[]).length,30*24);
   const study=statisticsCharts(filterStatisticsTasks(tasks,{category:'学习'}),categories,'week','2026-11-12',now);
