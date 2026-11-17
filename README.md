@@ -36,7 +36,10 @@ node server.mjs
 - 复盘按年→月→周排列，可创建每级复盘，周复盘含统计概要；月年复盘不汇总。周一为每周开始，跨月周属于周一所在月。
 - 周／月复盘自动生成总投入、各事项用时、高投入小时段、小时分布及每日投入的文字统计，Markdown 导出同时包含统计和手写总结。
 - 复盘文本自动保存；周复盘可标记关键并选择颜色，在关键复盘页面定位原文。
-- 每篇复盘可导出 Markdown，也可一次导出全部复盘。
+- 年度周复盘日历支持切换年份，悬浮查看该周投入、完成事项、打卡、里程碑和中断统计，点击进入当周复盘。已填写绿色、关键红色、未填写白色、未来灰色；空白记录不会被算作已填写。
+- 复盘可按周期、所在日期、关键词和填写状态组合查询，结果保留年→月→周层级；年/月复盘中也有下级复盘跳转入口。
+- 新建先打开草稿，点击“保存并创建”才写入；“取消创建”不留下记录。已有复盘继续自动保存。删除移入回收站，可撤销或在回收站恢复，正文、关键标记和颜色保留。
+- 每篇复盘可导出 Markdown，也可导出查询结果或一次导出全部有效复盘。详细规则见 [复盘查询与日历](docs/reviews.md)。
 
 ## 数据
 
@@ -99,7 +102,10 @@ For automatic startup independent of a terminal or Codex, install it as a Window
 - Reviews are organized by year, month, and week. Weekly reviews include a brief statistical overview; monthly and yearly reviews do not. Weeks start on Monday and belong to the month containing that Monday.
 - Weekly and monthly reviews automatically include textual totals, per-task durations, high-investment hours, hourly distribution, and daily totals. Markdown exports contain both these statistics and your written reflection.
 - Review text saves automatically. Flag weekly reviews as key reviews, choose a color, and navigate to them from a dedicated page.
-- Export one review or all reviews together as Markdown.
+- The yearly weekly-review calendar supports year navigation, hover statistics, and opening a week's review. Filled reviews are green, key reviews red, empty reviews white, and future weeks gray. Empty saved records do not count as filled.
+- Search reviews by period, containing date, keywords, and writing status. Results retain the year → month → week hierarchy. Yearly and monthly reviews link to their child reviews.
+- New reviews open as drafts and persist only after “保存并创建” (Save and create). Canceling a draft leaves no record; existing reviews continue to auto-save. Deletion moves a review to a recoverable recycle bin, retaining its text, key flag, and color. Undo immediately or restore later.
+- Export one review, query results, or all active reviews as Markdown. See [review navigation and calendar rules](docs/reviews.md).
 
 ### Storage and backup
 

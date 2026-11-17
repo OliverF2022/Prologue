@@ -38,7 +38,7 @@ function save(bucket,next,expectedGeneration){
   });
   bucket.writes=write;return write;
 }
-const files={'/':'index.html','/app.js':'app.js','/task-model.js':'task-model.js','/task-view.js':'task-view.js','/style.css':'style.css','/time-model.js':'time-model.js','/time-analytics.js':'time-analytics.js','/time-charts.js':'time-charts.js','/statistics-view.js':'statistics-view.js'};
+const files={'/':'index.html','/app.js':'app.js','/task-model.js':'task-model.js','/task-view.js':'task-view.js','/style.css':'style.css','/time-model.js':'time-model.js','/time-analytics.js':'time-analytics.js','/time-charts.js':'time-charts.js','/statistics-view.js':'statistics-view.js','/review-model.js':'review-model.js','/review-view.js':'review-view.js'};
 const server=http.createServer(async(req,res)=>{
   try{
     const path=new URL(req.url,'http://127.0.0.1').pathname;

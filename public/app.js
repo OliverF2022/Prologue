@@ -1,8 +1,10 @@
+import {reviewPage,reviewMap,reviewResults} from './review-view.js';
+import {activeReviews,findReview,reviewDate,queryReviews,createReview,trashReview,restoreReview} from './review-model.js';
 import {statisticsPage,statisticsCharts,statisticsDialog,outcomeCards} from './statistics-view.js';
 import { editSession, validateTimeState } from './time-model.js';
 import { todayTimeCharts } from './time-charts.js';
 import { timeSummary, reviewMarkdown, filterStatisticsTasks } from './time-analytics.js';
-import { normalizeTask, taskFromFields, reopenTask, rememberSubtype, localDay, periodBounds, periodStats,
+import { normalizeTask, taskFromFields, reopenTask, rememberSubtype, localDay, periodStats,
   startTimer, stopTimer, totalSeconds, formatElapsed, completeTask, interruptTask, resumeTask,
   updateTotal, validateTask } from './task-model.js';
 import { esc, dailyPage, completedPage, completionDialog, interruptionDialog, subtypeOptions,
@@ -16,21 +18,35 @@ state.tasks=state.tasks.map(normalizeTask);state.subtypes ||= [];
 let dailyChartMode='pie',lastChartUpdate=0;
 let statisticsFilters={category:'',subtype:''},statisticsTrigger=null;
 let completedFilters={month:today.slice(0,7),category:'',subtype:'',milestones:false};
+let reviewUI={year:Number(today.slice(0,4)),selectedId:null,draft:null,undoId:null,filters:{kind:'',date:'',keyword:'',status:'',trash:false}},reviewSaveToken=0;
 const pages=['今日记录','已完成事项','统计洞察','复盘空间','关键复盘'];
 $('#today').textContent=today;
 $('#mode-link').textContent=isDemo?'返回正式记录':'查看演示';$('#mode-link').href=isDemo?'/':'/?demo=1';$('#nav').innerHTML=pages.map(p=>`<button data-page="${p}">${p}</button>`).join('');
 
-const bounds=periodBounds;
 function stats(kind,date){return periodStats(state.tasks,kind,date)}
 const summary=s=>`<div class="metrics"><article><small>事项完成率</small><strong>${s.tasks?Math.round(s.done/s.tasks*100):0}%</strong><span>${s.done} / ${s.tasks} 项</span></article><article><small>投入时间</small><strong class="stat-time" data-kind="${s.kind}" data-date="${s.date}">${s.minutes}</strong><span>分钟</span></article><article><small>打卡成果</small><strong>${s.checks}</strong><span>次打卡</span></article></div>`;
-function review(r){return `<article class="review" id="r-${r.id}" style="border-left-color:${['#65745d','#d3904c','#aa6788','#5179b1'].includes(r.color)?r.color:'#65745d'}"><h3>${r.kind==='week'?'周':r.kind==='month'?'月':'年'}复盘 · ${r.date}</h3>${r.kind==='week'?summary(stats('week',r.date)):''}${['week','month'].includes(r.kind)?`<div class="review-time-summary"><h4>时间统计（自动生成）</h4><pre data-review-time="${r.id}">${esc(timeSummary(state.tasks,r.kind,r.date))}</pre></div>`:''}<textarea data-text="${r.id}" placeholder="记录收获、问题和下一步行动…">${esc(r.text)}</textarea>${r.kind==='week'?`<label><input type="checkbox" data-key="${r.id}" ${r.key?'checked':''}>关键复盘</label><select data-color="${r.id}">${['#65745d','#d3904c','#aa6788','#5179b1'].map(c=>`<option ${c===r.color?'selected':''}>${c}</option>`).join('')}</select>`:''}<button data-export="${r.id}">导出 Markdown</button><span class="saved">输入后自动保存</span></article>`}
 function render(){ $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));let html=`<h2>${page}</h2>`;
 if(page==='今日记录')html+=dailyPage(state,today,summary(stats('week',today)),dailyChartMode);
 if(page==='已完成事项')html+=completedPage(state,completedFilters,today);
 if(page==='统计洞察')html+=statisticsPage(state,period,anchor,statisticsFilters);
-if(page==='复盘空间'){html+=`<form id="review-form"><select name="kind"><option value="week">周复盘</option><option value="month">月复盘</option><option value="year">年复盘</option></select><input type="date" name="date" required value="${today}"><button class="primary">创建 / 定位复盘</button></form><button id="export-all">批量导出全部复盘</button>`;const years=[...new Set(state.reviews.map(r=>r.date.slice(0,4)))].sort().reverse();html+=years.map(y=>`<section><h3>${y} 年</h3><p>${state.reviews.filter(r=>r.kind==="month"&&r.date.startsWith(y)).map(r=>`<a href="#r-${r.id}">${r.date.slice(0,7)} 月复盘 ↗</a> `).join("")}</p>${state.reviews.filter(r=>r.kind==='year'&&r.date.startsWith(y)).map(review).join('')}${[...new Set(state.reviews.filter(r=>r.date.startsWith(y)&&r.kind!=='year').map(r=>r.date.slice(0,7)))].sort().map(m=>`<details open><summary>${m} 月</summary><p>${state.reviews.filter(r=>r.kind==='week'&&r.date.startsWith(m)).map(r=>`<a href="#r-${r.id}">${r.date} 周复盘 ↗</a> `).join('')}</p>${state.reviews.filter(r=>r.date.startsWith(m)&&r.kind!=='year').sort((a,b)=>a.kind==='month'?-1:a.date.localeCompare(b.date)).map(review).join('')}</details>`).join('')}</section>`).join('')||'<section>创建第一篇复盘，梳理这一段旅程。</section>'}
-if(page==='关键复盘')html+=state.reviews.filter(r=>r.key).map(r=>`<section><a data-jump="${r.id}" href="#r-${r.id}"><span style="color:${esc(r.color)}">●</span> ${r.date} 周复盘 ↗</a><p>${esc(r.text.slice(0,120))}</p><button data-export="${r.id}">导出 Markdown</button></section>`).join('')||'<section>在周复盘中勾选“关键复盘”，把重要的领悟留在这里。</section>';
+if(page==='复盘空间')html+=reviewPage(state,reviewUI,today);
+if(page==='关键复盘')html+=activeReviews(state.reviews).filter(r=>r.key).map(r=>`<section><a data-jump="${r.id}" href="#r-${r.id}"><span style="color:${esc(r.color)}">●</span> ${r.date} 周复盘 ↗</a><p>${esc(r.text.slice(0,120))}</p><button data-export="${r.id}">导出 Markdown</button></section>`).join('')||'<section>在周复盘中勾选“关键复盘”，把重要的领悟留在这里。</section>';
 $('#app').innerHTML=(isDemo?`<div class="demo-banner" role="note"><div><b>演示模式 · 全部为假数据</b><p>可自由体验计时、时段修改、统计与复盘。演示记录与正式数据独立保存。样例日期：${esc(state.demoAnchorDate)}</p></div><button type="button" id="reset-demo">恢复示例</button></div>`:'')+timerBanner(state)+html+hourOptions;if($('#period'))$('#period').value=period;
+}
+function focusReview(){document.getElementById('review-editor')?.scrollIntoView({block:'start'});$('#review-text')?.focus({preventScroll:true});}
+function openReview(kind,date,id){
+  const record=id?activeReviews(state.reviews).find(r=>r.id===id):findReview(state.reviews,kind,date);
+  if(id&&!record)throw Error('复盘不存在或已删除');
+  const start=record?.date||reviewDate(kind,date);
+  if(reviewUI.draft?.text?.trim()&&(reviewUI.draft.kind!==(record?.kind||kind)||reviewUI.draft.date!==start)&&!confirm('当前草稿尚未保存，放弃草稿并打开其他复盘？'))return;
+  reviewUI.year=Number(start.slice(0,4));reviewUI.selectedId=record?.id||null;
+  reviewUI.draft=record?null:{kind,date:start,text:'',key:false,color:'#65745d'};page='复盘空间';render();focusReview();
+}
+function refreshReviewOverview(){
+  if(page!=='复盘空间')return;
+  if($('#review-map-container'))$('#review-map-container').innerHTML=reviewMap(state,reviewUI.year,today);
+  if($('#review-results'))$('#review-results').innerHTML=reviewResults(state,reviewUI.filters);
+  if($('#export-query'))$('#export-query').disabled=!queryReviews(state.reviews,reviewUI.filters).length;
 }
 function download(items){
   const text=items.map(r=>reviewMarkdown(r,state.tasks)).join('\n\n---\n\n');
@@ -72,6 +88,14 @@ document.addEventListener('click', async event => {
   const data = button.dataset;
   try {
     if (data.page) { page = data.page; render(); }
+    if(data.reviewWeek)openReview('week',data.reviewWeek);
+    if(data.openReview)openReview(null,null,data.openReview);
+    if('closeReview' in data){reviewUI.draft=null;reviewUI.selectedId=null;render();}
+    if(data.reviewYearStep){reviewUI.year=Math.max(1901,Math.min(9998,reviewUI.year+Number(data.reviewYearStep)));render();}
+    if('reviewTrashToggle' in data){reviewUI.filters.trash=!reviewUI.filters.trash;render();}
+    if('reviewQueryReset' in data){reviewUI.filters={kind:'',date:'',keyword:'',status:'',trash:reviewUI.filters.trash};render();}
+    if(data.trashReview){await commit(trashReview(state,data.trashReview));reviewUI.undoId=data.trashReview;if(reviewUI.selectedId===data.trashReview)reviewUI.selectedId=null;render();}
+    if(data.restoreReview){await commit(restoreReview(state,data.restoreReview));reviewUI.undoId=null;render();}
     if (data.heatDate || data.stackDate || data.statOutcome) {
       const selection=data.heatDate?{type:'hour',date:data.heatDate,hour:Number(data.heatHour)}
         :data.stackDate?{type:data.stackScope||'day',date:data.stackDate,category:data.stackCategory}
@@ -142,9 +166,10 @@ document.addEventListener('click', async event => {
       completedFilters = { month: today.slice(0, 7), category: '', subtype: '', milestones: false };
       render();
     }
-    if (data.export) download(state.reviews.filter(r => r.id === data.export));
-    if (button.id === 'export-all') download(state.reviews);
-    if (data.jump) { page = '复盘空间'; render(); document.getElementById('r-' + data.jump)?.scrollIntoView(); }
+    if (data.export) download(activeReviews(state.reviews).filter(r => r.id === data.export));
+    if (button.id === 'export-all') download(activeReviews(state.reviews));
+    if (button.id === 'export-query') download(queryReviews(state.reviews,reviewUI.filters));
+    if (data.jump) openReview(null,null,data.jump);
   } catch (error) { report(error); }
 });
 
@@ -158,8 +183,14 @@ document.addEventListener('submit', async event => {
   if (submitter) submitter.disabled = true;
   form.querySelector('.form-error')?.replaceChildren();
   try {
+    if(form.id==='review-form'){openReview(fields.kind,fields.date);return;}
+    if(form.id==='review-query-form'){reviewUI.filters={...reviewUI.filters,...fields};render();return;}
+    if(form.id==='review-draft-form'){
+      if(!reviewUI.draft)throw Error('草稿已关闭，请重新打开');
+      const next=createReview(state,{...reviewUI.draft,...fields,key:Boolean(fields.key)});
+      await commit(next);reviewUI.selectedId=next.reviews.at(-1).id;reviewUI.draft=null;render();focusReview();return;
+    }
     const next = structuredClone(state);
-    let reviewId;
     if (form.id === 'task-form' || form.dataset.taskEdit || form.dataset.completion || form.dataset.interruption || form.dataset.sessionForm) {
       const id = form.dataset.taskEdit || form.dataset.completion || form.dataset.interruption || form.dataset.sessionForm;
       const previous = id ? next.tasks.find(t => t.id === id) : { id: crypto.randomUUID() };
@@ -185,17 +216,7 @@ document.addEventListener('submit', async event => {
       if (!name) throw Error('请填写子类型名称');
       rememberSubtype(next, fields.category, name);
     }
-    if (form.id === 'review-form') {
-      fields.date = bounds(fields.kind, fields.date)[0];
-      let review = next.reviews.find(r => r.kind === fields.kind && r.date === fields.date);
-      if (!review) {
-        review = { ...fields, id: crypto.randomUUID(), text: '', key: false, color: '#65745d' };
-        next.reviews.push(review);
-      }
-      reviewId = review.id;
-    }
     await commit(next);
-    if (reviewId) document.getElementById('r-' + reviewId)?.scrollIntoView();
   } catch (error) { report(error, form); }
   finally { if (submitter) submitter.disabled = false; }
 });
@@ -218,19 +239,26 @@ document.addEventListener('change', async event => {
   if (el.id === 'statistics-subtype') { statisticsFilters.subtype=el.value;render(); }
   if (el.id === 'period') { period = el.value; render(); }
   if (el.id === 'anchor' && el.value) { anchor = el.value; render(); }
+  if(el.id==='review-year'){
+    const year=Number(el.value);if(Number.isInteger(year)&&year>=1901&&year<=9998){reviewUI.year=year;render();}
+  }
+  if(form?.id==='review-draft-form'&&reviewUI.draft){reviewUI.draft[el.name]=el.type==='checkbox'?el.checked:el.value;}
   if (data.key || data.color) {
     const review = state.reviews.find(r => r.id === (data.key || data.color));
     if (data.key) review.key = el.checked;
     if (data.color) review.color = el.value;
-    try { await persist(); } catch (error) { report(error); }
+    try { await persist();refreshReviewOverview();const article=document.getElementById('r-'+review.id);if(article&&data.color)article.style.borderLeftColor=review.color; } catch (error) { report(error); }
   }
 });
 
 document.addEventListener('input', event => {
   const el = event.target;
+  if(el.form?.id==='review-draft-form'&&el.name==='text'&&reviewUI.draft)reviewUI.draft.text=el.value;
   if (el.dataset.text) {
-    state.reviews.find(r => r.id === el.dataset.text).text = el.value;
-    persist().catch(error => report(error));
+    const record=activeReviews(state.reviews).find(r=>r.id===el.dataset.text);if(!record)return;
+    record.text=el.value;const token=++reviewSaveToken;
+    if($('#review-save-status'))$('#review-save-status').textContent='正在保存…';
+    persist().then(()=>{refreshReviewOverview();if(token===reviewSaveToken&&$('#review-save-status'))$('#review-save-status').textContent='已保存';}).catch(error=>{report(error);if($('#review-save-status'))$('#review-save-status').textContent='保存失败，请重试';});
   }
 });
 
@@ -277,3 +305,13 @@ document.addEventListener('keydown',event=>{
   const next=event.key==='Home'?Math.floor(index/24)*24:event.key==='End'?Math.floor(index/24)*24+23:index+moves[event.key];
   if(cells[next]&&!cells[next].disabled){cell.tabIndex=-1;cells[next].tabIndex=0;cells[next].focus();}
 });
+
+function showReviewTooltip(button){
+  const tip=$('#review-week-tooltip');if(!tip||button.disabled)return;
+  tip.textContent=button.dataset.reviewTooltip;tip.hidden=false;
+  const rect=button.getBoundingClientRect(),width=tip.offsetWidth,height=tip.offsetHeight;
+  tip.style.left=Math.max(8,Math.min(innerWidth-width-8,rect.left+rect.width/2-width/2))+'px';
+  tip.style.top=Math.max(8,rect.top-height-10<8?Math.min(innerHeight-height-8,rect.bottom+10):rect.top-height-10)+'px';
+}
+for(const eventName of ['pointerover','focusin'])document.addEventListener(eventName,event=>{const button=event.target.closest('[data-review-tooltip]');if(button)showReviewTooltip(button);});
+for(const eventName of ['pointerout','focusout'])document.addEventListener(eventName,event=>{const button=event.target.closest('[data-review-tooltip]');if(button&&!button.contains(event.relatedTarget)&&$('#review-week-tooltip'))$('#review-week-tooltip').hidden=true;});
