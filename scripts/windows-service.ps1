@@ -6,10 +6,13 @@ param(
     [string]$DevRoot = 'D:\dev',
     [string]$ProjectRoot = '',
     [int]$ReplaceProcessId = 0,
-    [switch]$ResetData
+    [switch]$ResetData,
+    [switch]$PreserveData
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'data-backup.ps1')
+if ($ResetData -and $PreserveData) { throw 'PreserveData cannot be combined with ResetData. No changes were made.' }
 if (-not $ProjectRoot) { $ProjectRoot = Split-Path -Parent $PSScriptRoot }
 $serviceName = 'Prologue'
 $serviceDirectory = Join-Path $DevRoot 'services\Prologue'
@@ -131,22 +134,19 @@ try {
         throw 'Another Prologue service already exists at a different path. No changes were made.'
     }
     $backupPath = $null
+    $backups = @()
+    $dataUnchanged = $null
     if ($Action -eq 'Reinstall') {
         if ($existingService) {
             Stop-Service -Name $serviceName
             (Get-Service -Name $serviceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(20))
         }
+        $backups = @(Backup-PrologueData $receipt.dataDirectory (Join-Path $serviceDirectory 'backups'))
+        if ($backups.Count) { $backupPath = Split-Path -Parent $backups[0].backup }
         if ($ResetData) {
             $expectedData = [IO.Path]::GetFullPath((Join-Path $receipt.projectRoot 'data'))
             if ([IO.Path]::GetFullPath($receipt.dataDirectory) -ne $expectedData) { throw 'Refusing to reset a data directory outside this project.' }
             $storePath = Join-Path $expectedData 'store.json'
-            if (Test-Path -LiteralPath $storePath) {
-                $backupDirectory = Join-Path $serviceDirectory 'backups'
-                New-Item -ItemType Directory -Force -Path $backupDirectory | Out-Null
-                $backupPath = Join-Path $backupDirectory ('store-before-reset-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8) + '.json')
-                Copy-Item -LiteralPath $storePath -Destination $backupPath
-                if ((Get-FileHash -LiteralPath $storePath).Hash -ne (Get-FileHash -LiteralPath $backupPath).Hash) { throw 'Backup verification failed. Data was not reset.' }
-            }
             $blank = @{generation=[Guid]::NewGuid().ToString();categories=@( ([string][char]0x5DE5 + [char]0x4F5C), ([string][char]0x5B66 + [char]0x4E60), ([string][char]0x751F + [char]0x6D3B));subtypes=@();tasks=@();reviews=@()} | ConvertTo-Json -Depth 5
             Write-Utf8 ($storePath + '.tmp') $blank
             Move-Item -LiteralPath ($storePath + '.tmp') -Destination $storePath -Force
@@ -179,6 +179,10 @@ try {
             Invoke-Checked 'icacls.exe' @($receipt.dataDirectory, '/grant', '*S-1-5-19:(OI)(CI)M')
             Invoke-Checked $wrapper @('install')
         }
+        if ($Action -eq 'Reinstall' -and -not $ResetData) {
+            Assert-PrologueDataUnchanged $backups
+            $dataUnchanged = $true
+        }
         Start-Service -Name $serviceName
     }
     if ($Action -eq 'Start') { Start-Service -Name $serviceName }
@@ -189,9 +193,9 @@ try {
         Invoke-Checked $wrapper @('uninstall')
     }
     if ($Action -in @('Install','Reinstall','Start','Restart')) { Wait-Ready $receipt.url }
-    $result = [ordered]@{ok=$true; action=$Action; url=$receipt.url; resetData=[bool]$ResetData; backup=$backupPath; time=(Get-Date).ToString('o')}
-    Write-Utf8 $resultPath ($result | ConvertTo-Json)
-    $result | ConvertTo-Json
+    $result = [ordered]@{ok=$true; action=$Action; url=$receipt.url; resetData=[bool]$ResetData; preserveData=[bool]$PreserveData; backup=$backupPath; backups=$backups; dataUnchangedBeforeStart=$dataUnchanged; time=(Get-Date).ToString('o')}
+    Write-Utf8 $resultPath ($result | ConvertTo-Json -Depth 5)
+    $result | ConvertTo-Json -Depth 5
 } catch {
     if (Test-Path -LiteralPath $serviceDirectory) {
         Write-Utf8 $resultPath (@{ok=$false;action=$Action;error=$_.Exception.Message;time=(Get-Date).ToString('o')} | ConvertTo-Json)

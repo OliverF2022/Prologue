@@ -55,13 +55,13 @@ Set-Location D:\proj\myown\Prologue
 .\scripts\windows-service.ps1 -Action Uninstall
 ```
 
-重新安装并备份、清空正式记录（仅在需要重新开始时执行）：
+升级重装并保留全部已有记录：
 
 ```powershell
-.\scripts\windows-service.ps1 -Action Reinstall -ResetData
+.\scripts\windows-service.ps1 -Action Reinstall -PreserveData
 ```
 
-原数据备份在 `D:\dev\services\Prologue\backups`。不传 `ResetData` 的重新安装保留数据。重置后应刷新已打开的页面。详见 [时间段统计与重置说明](time-slots.md)。
+停止服务后，脚本将正式 `data/store.json` 和演示 `data/demo/store.json`（存在时）复制到 `D:\dev\services\Prologue\backups\<时间戳与唯一标识>`，保存源路径、备份路径和 SHA256 清单。校验备份与原文件一致后才继续重装，启动前再次校验原文件未变。记录及 generation 均保留，不执行数据库初始化。`PreserveData` 与 `ResetData` 互斥，误传两者会在操作服务前报错。详见 [时间段统计说明](time-slots.md)。
 
 安装或管理结果写入 `D:\dev\services\Prologue\install-result.json`。启动失败时检查该文件及 `logs` 中的错误日志。运行中的计时仍遵循应用规则：持续到暂停、中断或完成，服务重启不会丢失计时起点。
 
@@ -70,3 +70,5 @@ Set-Location D:\proj\myown\Prologue
 Prepare the runtime and wrapper with `scripts/windows-service.ps1 -Action Prepare`, then run `-Action Install` from an Administrator PowerShell window. Stop any manually launched server using port 3030 first. Files stay under `D:\dev`; journal data remains in the project's `data` directory.
 
 The service is named `Prologue`, starts automatically at boot, runs as `LocalService`, and restarts 10 seconds after a failure. Open http://127.0.0.1:3030/ on this computer. Use `-Action Status` to inspect it, or elevated `Start`, `Stop`, `Restart`, and `Uninstall` actions to manage it. Uninstalling the service preserves records and tool files. Restart after server-code updates.
+
+Use `-Action Reinstall -PreserveData` to reinstall without resetting records. Both existing real and demo databases are backed up after the service stops, with a SHA256 manifest. Original files are checked again before startup. `PreserveData` rejects any simultaneous `ResetData` switch before touching the service. Installation results include backup paths and `dataUnchangedBeforeStart`.

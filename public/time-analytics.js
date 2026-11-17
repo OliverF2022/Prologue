@@ -11,12 +11,12 @@ export function timeReport(tasks, kind, date, now = new Date()) {
   const [start, end] = timeRange(kind, date), hours = Array(24).fill(0), days = [];
   const dateMap = new Map(), taskMap = new Map(), segments = [];
   for (const d = new Date(start + 'T12:00:00'); localDay(d) < end; d.setDate(d.getDate() + 1)) {
-    const item = { date: localDay(d), seconds: 0, positioned: 0 };
+    const item = { date: localDay(d), seconds: 0, positioned: 0, hours: Array(24).fill(0), categoryMap: new Map() };
     dateMap.set(item.date, item); days.push(item);
   }
   let untimed = 0;
   for (const task of tasks) {
-    const item = { id: task.id, title: task.title, category: task.category, seconds: 0, positioned: 0,
+    const item = { id: task.id, title: task.title, category: task.category, subtype:task.subtype||'', seconds: 0, positioned: 0,
       hours: Array(24).fill(0) };
     for (const session of runningSessions(task, now)) {
       for (const part of splitSpan(session.start, session.end)) {
@@ -24,6 +24,8 @@ export function timeReport(tasks, kind, date, now = new Date()) {
         hours[part.hour] += part.seconds;
         dateMap.get(part.date).seconds += part.seconds;
         dateMap.get(part.date).positioned += part.seconds;
+        dateMap.get(part.date).hours[part.hour] += part.seconds;
+        addCategory(dateMap.get(part.date),task,part.seconds);
         item.seconds += part.seconds; item.positioned += part.seconds; item.hours[part.hour] += part.seconds;
         segments.push({ ...part, taskId: task.id, title: task.title, source: session.source, sessionId: session.id });
       }
@@ -31,6 +33,7 @@ export function timeReport(tasks, kind, date, now = new Date()) {
     for (const entry of task.untimedEntries || []) {
       if (entry.date < start || entry.date >= end) continue;
       untimed += entry.seconds; item.seconds += entry.seconds; dateMap.get(entry.date).seconds += entry.seconds;
+      addCategory(dateMap.get(entry.date),task,entry.seconds);
     }
     if (item.seconds > 0) taskMap.set(task.id, item);
   }
@@ -44,8 +47,54 @@ export function timeReport(tasks, kind, date, now = new Date()) {
     } else timeline.push({ ...part });
   }
   const positioned = hours.reduce((sum, value) => sum + value, 0);
-  return { start, end, hours, days, tasks: [...taskMap.values()].sort((a,b)=>b.seconds-a.seconds),
+  const daily=days.map(({categoryMap,...day})=>({...day,categories:[...categoryMap.values()].map(({taskIds,...group})=>({...group,taskCount:taskIds.size}))}));
+  return { start, end, hours, days:daily, tasks: [...taskMap.values()].sort((a,b)=>b.seconds-a.seconds),
     timeline, positioned, untimed, total: positioned + untimed };
+}
+
+function addCategory(day,task,seconds){
+  if(seconds<=0)return;
+  const group=day.categoryMap.get(task.category)||{category:task.category,seconds:0,taskIds:new Set()};
+  group.seconds+=seconds;group.taskIds.add(task.id);day.categoryMap.set(task.category,group);
+}
+
+export function filterStatisticsTasks(tasks,{category='',subtype=''}={}){
+  return tasks.filter(t=>(!category||t.category===category)&&(!subtype||(subtype==='__uncategorized__'?!t.subtype:t.subtype===subtype)));
+}
+
+export function periodOutcomes(tasks,kind,date){
+  const [start,end]=timeRange(kind,date);
+  const completed=tasks.filter(t=>t.done&&t.done>=start&&t.done<end);
+  const interruptions=tasks.flatMap(task=>(task.interruptions||[])
+    .filter(record=>{const day=localDay(record.at);return day>=start&&day<end})
+    .map(record=>({task,record})));
+  return {completed,milestones:completed.filter(t=>t.milestone),interruptions,
+    ordinary:completed.filter(t=>t.kind!=='habit').length,checkins:completed.filter(t=>t.kind==='habit').length};
+}
+
+export function statisticsTimeDetails(tasks,selection,now=new Date()){
+  const scope=selection.type==='month'?'month':'day';
+  const filtered=selection.category?tasks.filter(t=>t.category===selection.category):tasks;
+  const r=timeReport(filtered,scope,selection.date,now);
+  let start=-Infinity,end=Infinity;
+  if(selection.type==='hour'){
+    if(!Number.isInteger(selection.hour)||selection.hour<0||selection.hour>23)return [];
+    const d=new Date(selection.date+'T00:00:00');d.setHours(selection.hour);start=d.getTime();d.setHours(d.getHours()+1);end=d.getTime();
+  }
+  const rows=r.timeline.flatMap(segment=>{
+    const a=Math.max(start,Date.parse(segment.start)),b=Math.min(end,Date.parse(segment.end));
+    if(b<=a)return [];
+    const task=filtered.find(t=>t.id===segment.taskId);
+    return [{...segment,start:new Date(a).toISOString(),end:new Date(b).toISOString(),seconds:(b-a)/1000,
+      category:task.category,subtype:task.subtype||''}];
+  });
+  if(selection.type!=='hour'){
+    for(const task of filtered)for(const entry of task.untimedEntries||[]){
+      if(entry.date>=r.start&&entry.date<r.end&&entry.seconds>0)rows.push({taskId:task.id,title:task.title,
+        category:task.category,subtype:task.subtype||'',date:entry.date,seconds:entry.seconds,untimed:true});
+    }
+  }
+  return rows;
 }
 
 export function dayBudget(report, date, now = new Date()) {

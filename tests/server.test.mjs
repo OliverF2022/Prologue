@@ -11,6 +11,7 @@ test('HTTP serves workspace and persists API state',async()=>{
  const child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:'3039',DATA_DIR:dataDir}});
  try{await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('error',reject);child.once('exit',code=>reject(Error('server exited '+code)))});
  const r=await fetch('http://127.0.0.1:3039/');assert.equal(r.status,200);assert.match(await r.text(),/Prologue/);
+ const statistics=await fetch('http://127.0.0.1:3039/statistics-view.js');assert.equal(statistics.status,200);assert.match(await statistics.text(),/export function statisticsPage/);
  const state=await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json());assert.ok(Array.isArray(state.tasks));
  const blocked=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',headers:{Origin:'http://evil.test'},body:JSON.stringify(state)});assert.equal(blocked.status,403);
  state.subtypes=[{category:'工作',name:'开发'}];

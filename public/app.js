@@ -1,8 +1,9 @@
+import {statisticsPage,statisticsCharts,statisticsDialog,outcomeCards} from './statistics-view.js';
 import { editSession, validateTimeState } from './time-model.js';
-import { todayTimeCharts, periodTimeCharts } from './time-charts.js';
-import { timeSummary, reviewMarkdown } from './time-analytics.js';
+import { todayTimeCharts } from './time-charts.js';
+import { timeSummary, reviewMarkdown, filterStatisticsTasks } from './time-analytics.js';
 import { normalizeTask, taskFromFields, reopenTask, rememberSubtype, localDay, periodBounds, periodStats,
-  periodSeconds, startTimer, stopTimer, totalSeconds, formatElapsed, completeTask, interruptTask, resumeTask,
+  startTimer, stopTimer, totalSeconds, formatElapsed, completeTask, interruptTask, resumeTask,
   updateTotal, validateTask } from './task-model.js';
 import { esc, dailyPage, completedPage, completionDialog, interruptionDialog, subtypeOptions,
   hourOptions, timerBanner, sessionDialog } from './task-view.js';
@@ -13,6 +14,7 @@ const stateUrl=isDemo?'/api/demo/state':'/api/state';
 let today=day();let state=await fetch(stateUrl).then(r=>r.json()),page='今日记录',period='week',anchor=today;
 state.tasks=state.tasks.map(normalizeTask);state.subtypes ||= [];
 let dailyChartMode='pie',lastChartUpdate=0;
+let statisticsFilters={category:'',subtype:''},statisticsTrigger=null;
 let completedFilters={month:today.slice(0,7),category:'',subtype:'',milestones:false};
 const pages=['今日记录','已完成事项','统计洞察','复盘空间','关键复盘'];
 $('#today').textContent=today;
@@ -25,7 +27,7 @@ function review(r){return `<article class="review" id="r-${r.id}" style="border-
 function render(){ $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));let html=`<h2>${page}</h2>`;
 if(page==='今日记录')html+=dailyPage(state,today,summary(stats('week',today)),dailyChartMode);
 if(page==='已完成事项')html+=completedPage(state,completedFilters,today);
-if(page==='统计洞察'){const s=stats(period,anchor);html+=`<div class="toolbar"><select id="period"><option value="week">周</option><option value="month">月</option><option value="year">年</option></select><input id="anchor" type="date" value="${anchor}"></div><p>${bounds(period,anchor).join(' 至 ')}（结束日期不含）</p>${summary(s)}<section id="period-time-charts">${periodTimeCharts(state.tasks,period,anchor)}</section><section><h3>分类投入时间</h3>${state.categories.map(c=>{const m=Math.floor(periodSeconds(state.tasks.filter(t=>t.category===c),period,anchor)/60);return `<p>${esc(c)} <b data-category-time="${esc(c)}">${m} 分钟</b></p><div class="track"><div data-category-bar="${esc(c)}" style="width:${s.minutes?m/s.minutes*100:0}%"></div></div>`}).join('')}<p class="lead">按实际投入日期统计，包含未完成事项的用时。</p><h3>事项完成比例</h3><meter min="0" max="${s.tasks||1}" value="${s.done}"></meter><h3>打卡次数</h3><p>${s.checks} 次</p><div class="track"><div style="width:${Math.min(100,s.checks*5)}%"></div></div></section>`}
+if(page==='统计洞察')html+=statisticsPage(state,period,anchor,statisticsFilters);
 if(page==='复盘空间'){html+=`<form id="review-form"><select name="kind"><option value="week">周复盘</option><option value="month">月复盘</option><option value="year">年复盘</option></select><input type="date" name="date" required value="${today}"><button class="primary">创建 / 定位复盘</button></form><button id="export-all">批量导出全部复盘</button>`;const years=[...new Set(state.reviews.map(r=>r.date.slice(0,4)))].sort().reverse();html+=years.map(y=>`<section><h3>${y} 年</h3><p>${state.reviews.filter(r=>r.kind==="month"&&r.date.startsWith(y)).map(r=>`<a href="#r-${r.id}">${r.date.slice(0,7)} 月复盘 ↗</a> `).join("")}</p>${state.reviews.filter(r=>r.kind==='year'&&r.date.startsWith(y)).map(review).join('')}${[...new Set(state.reviews.filter(r=>r.date.startsWith(y)&&r.kind!=='year').map(r=>r.date.slice(0,7)))].sort().map(m=>`<details open><summary>${m} 月</summary><p>${state.reviews.filter(r=>r.kind==='week'&&r.date.startsWith(m)).map(r=>`<a href="#r-${r.id}">${r.date} 周复盘 ↗</a> `).join('')}</p>${state.reviews.filter(r=>r.date.startsWith(m)&&r.kind!=='year').sort((a,b)=>a.kind==='month'?-1:a.date.localeCompare(b.date)).map(review).join('')}</details>`).join('')}</section>`).join('')||'<section>创建第一篇复盘，梳理这一段旅程。</section>'}
 if(page==='关键复盘')html+=state.reviews.filter(r=>r.key).map(r=>`<section><a data-jump="${r.id}" href="#r-${r.id}"><span style="color:${esc(r.color)}">●</span> ${r.date} 周复盘 ↗</a><p>${esc(r.text.slice(0,120))}</p><button data-export="${r.id}">导出 Markdown</button></section>`).join('')||'<section>在周复盘中勾选“关键复盘”，把重要的领悟留在这里。</section>';
 $('#app').innerHTML=(isDemo?`<div class="demo-banner" role="note"><div><b>演示模式 · 全部为假数据</b><p>可自由体验计时、时段修改、统计与复盘。演示记录与正式数据独立保存。样例日期：${esc(state.demoAnchorDate)}</p></div><button type="button" id="reset-demo">恢复示例</button></div>`:'')+timerBanner(state)+html+hourOptions;if($('#period'))$('#period').value=period;
@@ -65,11 +67,21 @@ async function commit(next) {
 }
 
 document.addEventListener('click', async event => {
-  const button = event.target.closest('button,a');
+  const button = event.target.closest('button,a,[data-stack-date]');
   if (!button) return;
   const data = button.dataset;
   try {
     if (data.page) { page = data.page; render(); }
+    if (data.heatDate || data.stackDate || data.statOutcome) {
+      const selection=data.heatDate?{type:'hour',date:data.heatDate,hour:Number(data.heatHour)}
+        :data.stackDate?{type:data.stackScope||'day',date:data.stackDate,category:data.stackCategory}
+        :{type:'outcome',outcome:data.statOutcome};
+      if(data.heatDate){button.closest('.time-heatmap').querySelectorAll('.heat-cell').forEach(el=>el.tabIndex=el===button?0:-1)}
+      statisticsTrigger=button;$('#statistics-detail-dialog')?.remove();
+      $('#app').insertAdjacentHTML('beforeend',statisticsDialog(filterStatisticsTasks(state.tasks,statisticsFilters),period,anchor,selection));
+      $('#statistics-detail-dialog').showModal();
+    }
+    if ('closeStatistics' in data){$('#statistics-detail-dialog').remove();if(statisticsTrigger?.isConnected)statisticsTrigger.focus();}
     if (button.id==='reset-demo'&&isDemo) {
       if(mutating)throw Error('正在保存，请稍后重试');
       await queue.catch(()=>{});
@@ -202,6 +214,8 @@ document.addEventListener('change', async event => {
   if (el.id === 'completed-category') { completedFilters.category = el.value; completedFilters.subtype = ''; render(); }
   if (el.id === 'completed-subtype') { completedFilters.subtype = el.value; render(); }
   if (el.id === 'only-milestones') { completedFilters.milestones = el.checked; render(); }
+  if (el.id === 'statistics-category') { statisticsFilters={category:el.value,subtype:''};render(); }
+  if (el.id === 'statistics-subtype') { statisticsFilters.subtype=el.value;render(); }
   if (el.id === 'period') { period = el.value; render(); }
   if (el.id === 'anchor' && el.value) { anchor = el.value; render(); }
   if (data.key || data.color) {
@@ -242,16 +256,24 @@ setInterval(() => {
   if(now.getTime()-lastChartUpdate>10000){
     const daily=$('#today-time-charts'),periodCharts=$('#period-time-charts');
     if(daily && !daily.contains(document.activeElement))daily.innerHTML=todayTimeCharts(state.tasks,today,dailyChartMode,now);
-    if(periodCharts && !periodCharts.contains(document.activeElement))periodCharts.innerHTML=periodTimeCharts(state.tasks,period,anchor,now);
+    if(periodCharts && !$('#statistics-detail-dialog')?.open && !periodCharts.contains(document.activeElement))periodCharts.innerHTML=statisticsCharts(filterStatisticsTasks(state.tasks,statisticsFilters),state.categories,period,anchor,now);
+    const outcomes=$('#statistics-outcomes');
+    if(outcomes&&!$('#statistics-detail-dialog')?.open&&!outcomes.contains(document.activeElement))outcomes.innerHTML=outcomeCards(filterStatisticsTasks(state.tasks,statisticsFilters),period,anchor,now);
     document.querySelectorAll('[data-review-time]').forEach(el=>{const r=state.reviews.find(r=>r.id===el.dataset.reviewTime);if(r)el.textContent=timeSummary(state.tasks,r.kind,r.date,now)});
     lastChartUpdate=now.getTime();
   }
-  const total=periodSeconds(state.tasks,period,anchor,now);
-  document.querySelectorAll('[data-category-time]').forEach(el=>{
-    el.textContent=Math.floor(periodSeconds(state.tasks.filter(t=>t.category===el.dataset.categoryTime),period,anchor,now)/60)+' 分钟';
-  });
-  document.querySelectorAll('[data-category-bar]').forEach(el=>{
-    const seconds=periodSeconds(state.tasks.filter(t=>t.category===el.dataset.categoryBar),period,anchor,now);
-    el.style.width=(total?seconds/total*100:0)+'%';
-  });
 },1000);
+
+// A single heatmap tab stop; arrow keys move between adjacent clock-hour cells.
+document.addEventListener('keydown',event=>{
+  const bar=event.target.closest('[data-stack-date]');
+  if(bar&&['Enter',' '].includes(event.key)){event.preventDefault();bar.dispatchEvent(new MouseEvent('click',{bubbles:true}));return;}
+  const cell=event.target.closest('.heat-cell');
+  if(!cell)return;
+  const moves={ArrowLeft:-1,ArrowRight:1,ArrowUp:-24,ArrowDown:24};
+  if(!(event.key in moves)&&!['Home','End'].includes(event.key))return;
+  event.preventDefault();
+  const cells=[...cell.closest('.time-heatmap').querySelectorAll('.heat-cell')],index=Number(cell.dataset.cellIndex);
+  const next=event.key==='Home'?Math.floor(index/24)*24:event.key==='End'?Math.floor(index/24)*24+23:index+moves[event.key];
+  if(cells[next]&&!cells[next].disabled){cell.tabIndex=-1;cells[next].tabIndex=0;cells[next].focus();}
+});

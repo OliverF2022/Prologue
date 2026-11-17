@@ -24,11 +24,16 @@ export function barChart(rows, title, stacked = false) {
     const series=stacked?row.values:[{seconds:row.seconds,color:'#718b63',label:row.label}];
     const rects=series.map(value=>{
       const h=value.seconds/60/maximum*plotHeight,y=bottom-offset-h;offset+=h;
-      return value.seconds>0?`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${value.color}" rx="2" tabindex="0" role="img" aria-label="${esc(row.label+' '+value.label+' '+formatElapsed(value.seconds))}"><title>${esc(row.label+' · '+value.label+'：'+formatElapsed(value.seconds))}</title></rect>`:'';
+      const interactive=Boolean(row.date&&value.category!==undefined);
+      const label=(row.fullLabel||row.label)+' · '+value.label+'：'+formatElapsed(value.seconds)
+        +(stacked&&row.seconds?'（'+(value.seconds/row.seconds*100).toFixed(1)+'%）':'')
+        +(value.taskCount!==undefined?' · '+value.taskCount+' 个事项':'');
+      const action=interactive?`data-stack-date="${esc(row.date)}" data-stack-category="${esc(value.category)}" data-stack-scope="${row.scope||'day'}"`:'';
+      return value.seconds>0?`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${value.color}" rx="2" tabindex="0" role="${interactive?'button':'img'}" ${action} aria-label="${esc(label+(interactive?'，查看明细':''))}"><title>${esc(label)}</title></rect>`:'';
     }).join('');
     return `${rects}<text x="${left+(i+.5)*slot}" y="${bottom+21}" text-anchor="middle">${esc(row.label)}</text>`;
   }).join('');
-  return `<div class="bar-scroll" tabindex="0" aria-label="${esc(title)}，可横向滚动"><svg class="time-bar-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}"><title>${esc(title)}</title><text x="12" y="12">分钟</text>${grid}${bars}</svg></div>
+  return `<div class="bar-scroll" tabindex="0" aria-label="${esc(title)}，可横向滚动"><svg class="time-bar-chart" viewBox="0 0 ${width} ${height}" role="${rows.some(r=>r.date)?'group':'img'}" aria-label="${esc(title)}"><title>${esc(title)}</title><text x="12" y="12">分钟</text>${grid}${bars}</svg></div>
     <details class="chart-data"><summary>查看图表数据</summary><table><thead><tr><th>时间</th><th>累计投入</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.fullLabel||r.label)}</td><td>${formatElapsed(r.seconds)}</td></tr>`).join('')}</tbody></table></details>`;
 }
 
