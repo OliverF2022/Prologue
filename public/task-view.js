@@ -75,7 +75,7 @@ export function taskCard(task, state, today, now = new Date()) {
 export function dailyPage(state, today, summary, chartMode='pie') {
   const initial = { category: state.categories[0], kind: 'task', progress: 0 };
   const entries = todayTasks(state.tasks, today);
-  return `<p class="lead">把今天的专注，变成明天的积累。</p>${summary}
+  return `<p class="lead">把今天的专注，变成明天的积累。</p>${summary}<p class="chart-note">今日完成率与下方“今日与待办”使用相同范围，包含顺延的未完成事项；已在之前日期完成的事项可到“已完成事项”查看。</p>
     <section><h3>添加事项</h3><form id="task-form" class="entry-form">
       <label class="wide">事项名称<input name="title" required maxlength="200" placeholder="今天想完成什么？"></label>
       ${categoryFields(state, initial, 'new')}
@@ -150,7 +150,7 @@ export function sessionDialog(task, session, now=new Date()) {
 
 export function timerBanner(state) {
   const task = state.tasks.find(t => t.activeTimer);
-  return task ? `<div class="timer-banner" role="status"><span>正在计时：${esc(task.title)} · 累计 <strong data-task-time="${esc(task.id)}">${formatElapsed(totalSeconds(task))}</strong></span><button type="button" data-pause-time="${esc(task.id)}">暂停计时</button></div>` : '';
+  return task ? `<div class="timer-banner" role="status"><span>正在计时：${esc(task.title)} · 累计 <strong data-task-time="${esc(task.id)}">${formatElapsed(totalSeconds(task))}</strong></span><button type="button" data-locate-task="${esc(task.id)}">查看事项</button><button type="button" data-pause-time="${esc(task.id)}">暂停计时</button></div>` : '';
 }
 
 export const hourOptions = `<datalist id="hour-options">${[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24].map(h => option(String(h), String(h))).join('')}</datalist>`;

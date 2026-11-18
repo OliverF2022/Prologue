@@ -24,6 +24,7 @@ test('HTTP serves workspace and persists API state',async()=>{
    {start:new Date(now.getTime()-120000),end:new Date(now.getTime()-60000)},'manual-session',now));
  state.tasks.push(manual);
  const saved=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(state)});assert.equal(saved.status,200);
+ state.revision=(await saved.json()).revision;
  assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
  const stale={...state,generation:'before-reset'};
  assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(stale)})).status,409);
@@ -39,7 +40,7 @@ test('HTTP serves workspace and persists API state',async()=>{
  assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(invalid)})).status,400);
  assert.deepEqual(await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json()),state);
  let reviews=createReview(state,{kind:'week',date:today,text:'可恢复的复盘 <内容>',key:true,color:'#aa6788'},'review-roundtrip');
- const saveReviews=async next=>assert.equal((await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(next)})).status,200);
+ const saveReviews=async next=>{const response=await fetch('http://127.0.0.1:3039/api/state',{method:'PUT',body:JSON.stringify(next)});assert.equal(response.status,200);next.revision=(await response.json()).revision;};
  await saveReviews(reviews);reviews=trashReview(reviews,'review-roundtrip');await saveReviews(reviews);
  const deleted=await fetch('http://127.0.0.1:3039/api/state').then(r=>r.json());
  assert.equal(activeReviews(deleted.reviews).length,0);assert.equal(deleted.reviews[0].text,'可恢复的复盘 <内容>');
@@ -49,6 +50,7 @@ test('HTTP serves workspace and persists API state',async()=>{
  assert.equal(activeReviews(recovered.reviews)[0].key,true);assert.equal(recovered.reviews[0].deletedAt,undefined);
  assert.deepEqual(recovered.tasks,state.tasks);assert.deepEqual(recovered.categories,state.categories);
  state.reviews=recovered.reviews;
+ state.revision=recovered.revision;
  assert.match(await fetch('http://127.0.0.1:3039/task-model.js').then(r=>r.text()),/taskFromFields/);
  assert.equal((await fetch('http://127.0.0.1:3039/unknown')).status,404);
  assert.equal((await fetch('http://127.0.0.1:3039/?demo=1')).status,200);

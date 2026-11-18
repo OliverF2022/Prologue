@@ -32,7 +32,7 @@ node server.mjs
 - 打卡为每日独立事项，完成后计一次；下一天需新建当天打卡。
 - 已完成事项默认只展示本月成果，支持完成月份、主类型（工作 / 学习 / 生活等）、子类型和“仅看里程碑”组合筛选；结果仍按主类型分组。列表按完成月份查询，并展示事项的全部累计用时。
 - 可在编辑或完成事项时标记里程碑并添加选填备注。创建或编辑事项时可直接输入新子类型，也可在“管理主类型 / 子类型”中预先建立。
-- 周/月/年切换查看所选周期的投入与成果，完成事项区分普通任务和打卡次数。统计页、今日与周复盘中的完成率按开始日期归属。跨月事项的耗时按实际记录日期分别进入各月，包含未完成事项。
+- 周/月/年切换查看所选周期的投入与成果，完成事项区分普通任务和打卡次数。统计页和周复盘中的完成率按开始日期归属；今日完成率与“今日与待办”列表范围一致，包含顺延事项，投入和打卡仅统计今天。跨月事项的耗时按实际记录日期分别进入各月，包含未完成事项。
 - 复盘按年→月→周排列，可创建每级复盘，周复盘含统计概要；月年复盘不汇总。周一为每周开始，跨月周属于周一所在月。
 - 周／月复盘自动生成总投入、各事项用时、高投入小时段、小时分布及每日投入的文字统计，Markdown 导出同时包含统计和手写总结。
 - 复盘文本自动保存；周复盘可标记关键并选择颜色，在关键复盘页面定位原文。
@@ -44,6 +44,10 @@ node server.mjs
 ## 数据
 
 数据位于 `data/store.json`，不提交到 Git。停止服务后复制此文件即可备份。数据保存在服务端，不受浏览器清理缓存影响。当前是个人本机版本，不提供账号、远程访问或多进程并发写入。
+
+支持同时打开多个浏览器标签页：新增或修改不同事项会自动合并；同时修改同一事项或复盘会提示冲突，保留本页修改并支持导出 JSON 备份。切回标签页会同步最新记录，页面可见时每 5 秒检查更新；正在输入的表单不会被自动刷新清空。计时横幅提供“查看事项”，可定位正在计时的记录。
+
+服务端按 `revision` 检查保存版本，并在写入队列内再次校验，旧标签页不能覆盖新记录。更新后请刷新旧页面；旧版页面的提交会被拒绝并留存。每次写入前及被拒绝的快照分别保存在正式 `data/history`、演示 `data/demo/history`，不进入 Git。记录本身不会因为同步而复制，计时起点、时段和统计沿用原事项。详见 [多标签页同步](docs/synchronization.md)。
 
 升级重装使用 `scripts/windows-service.ps1 -Action Reinstall -PreserveData`：停止服务后备份正式及演示数据库，校验 SHA256，确认原文件未变后重新启动。备份位于 `D:\dev\services\Prologue\backups`，不清空任务、复盘或类型。
 
@@ -98,7 +102,7 @@ For automatic startup independent of a terminal or Codex, install it as a Window
 - Each check-in is a separate daily entry. Create a new entry for the next day; completing it counts as one check-in.
 - Completed entries default to the current month. Combine completion-month, parent-category, subtype, and milestone-only filters. Results remain grouped by parent category and show each task's cumulative duration.
 - Mark entries as milestones with an optional note when editing or completing them. Enter a new subtype when creating or editing, or create it in advance under “管理主类型 / 子类型” (Manage categories / subtypes).
-- Select a week, month, or year for effort and outcomes, with ordinary completions and check-ins counted separately. Time belongs to the day recorded, including unfinished work. Completion rates in Analytics, Today, and weekly reviews group entries by start date. Effort spanning months is attributed to its respective recorded days.
+- Select a week, month, or year for effort and outcomes, with ordinary completions and check-ins counted separately. Time belongs to the day recorded, including unfinished work. Analytics and weekly-review completion rates group entries by start date. Today's completion rate matches its visible today/rollover list; effort and check-ins cover today only. Effort spanning months is attributed to its respective recorded days.
 - Reviews are organized by year, month, and week. Weekly reviews include a brief statistical overview; monthly and yearly reviews do not. Weeks start on Monday and belong to the month containing that Monday.
 - Weekly and monthly reviews automatically include textual totals, per-task durations, high-investment hours, hourly distribution, and daily totals. Markdown exports contain both these statistics and your written reflection.
 - Review text saves automatically. Flag weekly reviews as key reviews, choose a color, and navigate to them from a dedicated page.
@@ -110,6 +114,8 @@ For automatic startup independent of a terminal or Codex, install it as a Window
 ### Storage and backup
 
 Records are stored in `data/store.json`, which is excluded from Git. Stop the server before copying this file for backup. Clearing browser storage does not remove these records. This version is for personal local use and has no accounts, remote access, or support for concurrent writes from multiple server processes.
+
+Multiple browser tabs are supported. Independent records merge automatically; conflicting edits to the same task or review preserve the local draft and offer a JSON backup. Tabs synchronize on focus and every five seconds while visible, without replacing dirty forms. Use “查看事项” in the timer banner to locate the running task. The server checks persisted revisions inside its write queue and archives previous/rejected snapshots in `data/history` (or `data/demo/history`). Refresh older pages after upgrading. See [synchronization rules](docs/synchronization.md).
 
 Upgrade with `scripts/windows-service.ps1 -Action Reinstall -PreserveData`. After stopping the service, it snapshots both real and demo stores under `D:\dev\services\Prologue\backups`, verifies SHA256 checksums, and checks that the original files are unchanged before starting. Tasks, reviews, and categories are retained.
 

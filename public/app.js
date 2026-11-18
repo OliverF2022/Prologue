@@ -1,9 +1,10 @@
+import {createStateClient} from './state-sync.js';
 import {reviewPage,reviewMap,reviewResults} from './review-view.js';
 import {activeReviews,findReview,reviewDate,reviewDraft,queryReviews,createReview,trashReview,restoreReview} from './review-model.js';
 import {statisticsPage,statisticsCharts,statisticsDialog,outcomeCards} from './statistics-view.js';
 import { editSession, validateTimeState } from './time-model.js';
 import { todayTimeCharts } from './time-charts.js';
-import { timeSummary, reviewMarkdown, filterStatisticsTasks } from './time-analytics.js';
+import { timeSummary, reviewMarkdown, filterStatisticsTasks, dailyStats } from './time-analytics.js';
 import { normalizeTask, taskFromFields, reopenTask, rememberSubtype, localDay, periodStats,
   startTimer, stopTimer, totalSeconds, formatElapsed, completeTask, interruptTask, resumeTask,
   updateTotal, validateTask } from './task-model.js';
@@ -23,10 +24,9 @@ const pages=['今日记录','已完成事项','统计洞察','复盘空间','关
 $('#today').textContent=today;
 $('#mode-link').textContent=isDemo?'返回正式记录':'查看演示';$('#mode-link').href=isDemo?'/':'/?demo=1';$('#nav').innerHTML=pages.map(p=>`<button data-page="${p}">${p}</button>`).join('');
 
-function stats(kind,date){return periodStats(state.tasks,kind,date)}
-const summary=s=>`<div class="metrics"><article><small>事项完成率</small><strong>${s.tasks?Math.round(s.done/s.tasks*100):0}%</strong><span>${s.done} / ${s.tasks} 项</span></article><article><small>投入时间</small><strong class="stat-time" data-kind="${s.kind}" data-date="${s.date}">${s.minutes}</strong><span>分钟</span></article><article><small>打卡成果</small><strong>${s.checks}</strong><span>次打卡</span></article></div>`;
+const summary=s=>`<div class="metrics"><article><small>今日事项完成率</small><strong>${s.tasks?Math.round(s.done/s.tasks*100):0}%</strong><span>${s.done} / ${s.tasks} 项</span></article><article><small>今日投入</small><strong class="stat-time" data-kind="${s.kind}" data-date="${s.date}">${s.minutes}</strong><span>分钟</span></article><article><small>今日打卡</small><strong>${s.checks}</strong><span>次打卡</span></article></div>`;
 function render(){ $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));let html=`<h2>${page}</h2>`;
-if(page==='今日记录')html+=dailyPage(state,today,summary(stats('week',today)),dailyChartMode);
+if(page==='今日记录')html+=dailyPage(state,today,summary(dailyStats(state.tasks,today)),dailyChartMode);
 if(page==='已完成事项')html+=completedPage(state,completedFilters,today);
 if(page==='统计洞察')html+=statisticsPage(state,period,anchor,statisticsFilters);
 if(page==='复盘空间')html+=reviewPage(state,reviewUI,today);
@@ -53,21 +53,38 @@ function download(items){
   const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'})),a=document.createElement('a');
   a.href=url;a.download=`Prologue-${today}.md`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-let queue = Promise.resolve();
-function persist(next = state) {
-  validateTimeState(next.tasks);
-  const body = JSON.stringify(next);
-  const request = queue.catch(() => {}).then(async () => {
-    const response = await fetch(stateUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
-    if (!response.ok) {
-      const result = await response.json().catch(() => ({}));
-      throw Error(result.error || '保存失败，请重试');
-    }
-    $('#error').textContent = '';
-  });
-  queue = request;
-  return request;
+const syncChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('prologue-state-'+(isDemo?'demo':'main')):null;
+const recoverySessionKey='prologue-recovery-key-'+(isDemo?'demo':'main');
+let previousRecoveryKey=null;try{previousRecoveryKey=sessionStorage.getItem(recoverySessionKey)}catch{}
+const recoveryKey='prologue-unsaved-'+(isDemo?'demo-':'main-')+crypto.randomUUID();
+try{sessionStorage.setItem(recoverySessionKey,recoveryKey)}catch{}
+let unsavedBackup=null;
+try{unsavedBackup=JSON.parse(localStorage.getItem(previousRecoveryKey)||'null');if(unsavedBackup)localStorage.setItem(recoveryKey,JSON.stringify(unsavedBackup))}catch{}
+function showSyncNotice(message){
+  const notice=$('#sync-notice');notice.hidden=false;
+  notice.innerHTML='<p>'+esc(message)+'</p>'+(unsavedBackup?'<button type="button" id="download-unsaved">导出未保存修改</button> ':'')+'<button type="button" id="load-latest-state">载入最新记录</button>';
 }
+function makeStateClient(initial){return createStateClient(initial,{url:stateUrl,
+  onState:next=>{state=next},onSaved:revision=>{syncChannel?.postMessage({revision});$('#error').textContent='';if(!unsavedBackup)$('#sync-notice').hidden=true},
+  onConflict:(error,backup)=>{
+    unsavedBackup={...backup,time:new Date().toISOString(),reason:error.message};
+    try{localStorage.setItem(recoveryKey,JSON.stringify(unsavedBackup))}catch{}
+    showSyncNotice(error.message+'。当前输入不会自动清除，可先导出修改备份，再载入最新记录。');
+  }});}
+let stateClient=makeStateClient(state),queue=Promise.resolve();
+function persist(next=state){validateTimeState(next.tasks);const request=stateClient.save(next);queue=request;return request;}
+function canRefreshState(){return !mutating&&!stateClient.pending&&!stateClient.blocked&&!reviewUI.draft&&!document.querySelector('dialog[open],form[data-unsaved]')&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]');}
+async function refreshState(){
+  if(document.visibilityState!=='visible'||!canRefreshState())return;
+  try{if(await stateClient.refresh(canRefreshState)){render();if(!unsavedBackup)$('#sync-notice').hidden=true;}}catch{}
+}
+if(syncChannel)syncChannel.onmessage=()=>{
+  if(!canRefreshState()){if(!stateClient.blocked)showSyncNotice('其他页面已更新记录，本页输入会保留；保存时将合并不同事项的修改。');return;}
+  refreshState();
+};
+window.addEventListener('focus',refreshState);document.addEventListener('visibilitychange',refreshState);
+setInterval(refreshState,5000);
+for(const eventName of ['input','change'])document.addEventListener(eventName,event=>{if(event.target.form&&!event.target.dataset.text)event.target.form.dataset.unsaved='true'});
 
 function report(error, form) {
   const target = form?.querySelector('.form-error') || $('#error');
@@ -78,7 +95,7 @@ let mutating = false;
 async function commit(next) {
   if(mutating) throw Error('正在保存，请稍后重试');
   mutating = true;
-  try { await persist(next); state = next; render(); }
+  try { state=await persist(next); render(); }
   finally { mutating = false; }
 }
 
@@ -87,6 +104,15 @@ document.addEventListener('click', async event => {
   if (!button) return;
   const data = button.dataset;
   try {
+    if(button.id==='download-unsaved'&&unsavedBackup){
+      const url=URL.createObjectURL(new Blob([JSON.stringify(unsavedBackup,null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='Prologue-unsaved-'+today+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+    if(button.id==='load-latest-state'){
+      if(stateClient.pending)throw Error('正在保存，请稍后载入');
+      if(!confirm('载入最新记录会重新打开页面；未提交的表单输入请先复制保存。继续？'))return;
+      location.reload();return;
+    }
+    if(data.locateTask){page='今日记录';render();const row=[...document.querySelectorAll('[data-task-id]')].find(el=>el.dataset.taskId===data.locateTask);if(row){row.tabIndex=-1;row.scrollIntoView({block:'center'});row.focus();}}
     if (data.page) { page = data.page; render(); }
     if(data.reviewWeek)openReview('week',data.reviewWeek);
     if(data.openReview)openReview(null,null,data.openReview);
@@ -111,7 +137,7 @@ document.addEventListener('click', async event => {
       await queue.catch(()=>{});
       const response=await fetch('/api/demo/reset',{method:'POST'});
       if(!response.ok)throw Error('恢复演示数据失败，请重试');
-      state=await response.json();render();
+      state=await response.json();stateClient=makeStateClient(state);syncChannel?.postMessage({revision:state.revision});render();
     }
     if (data.dayChart) { dailyChartMode=data.dayChart; $('#today-time-charts').innerHTML=todayTimeCharts(state.tasks,today,dailyChartMode); }
     if (data.addSession || data.editSession) {
@@ -263,6 +289,7 @@ document.addEventListener('input', event => {
 });
 
 render();
+if(unsavedBackup)showSyncNotice('检测到本标签页之前未保存的修改，可导出备份核对。');
 setInterval(() => {
   const now=new Date(), current=day(now);
   if(current!==today){today=current;$('#today').textContent=today;render();}
@@ -279,7 +306,7 @@ setInterval(() => {
     if(task)el.textContent=formatElapsed(stopTimer(task,now).timeEntries.find(e=>e.date===el.dataset.timeDate)?.seconds||0);
   });
   document.querySelectorAll('.stat-time').forEach(el=>{
-    el.textContent=String(periodStats(state.tasks,el.dataset.kind,el.dataset.date,now).minutes);
+    el.textContent=String((el.dataset.kind==='day'?dailyStats(state.tasks,el.dataset.date,now):periodStats(state.tasks,el.dataset.kind,el.dataset.date,now)).minutes);
   });
   if(now.getTime()-lastChartUpdate>10000){
     const daily=$('#today-time-charts'),periodCharts=$('#period-time-charts');

@@ -1,10 +1,16 @@
-import { localDay, periodBounds, formatElapsed } from './task-model.js';
+import { localDay, periodBounds, formatElapsed, todayTasks } from './task-model.js';
 import { runningSessions, splitSpan } from './time-model.js';
 
 export function timeRange(kind, date) {
   if (kind !== 'day') return periodBounds(kind, date);
   const next = new Date(date + 'T12:00:00'); next.setDate(next.getDate() + 1);
   return [date, localDay(next)];
+}
+
+export function dailyStats(tasks,date,now=new Date()){
+  const visible=todayTasks(tasks,date),r=timeReport(tasks,'day',date,now);
+  return {kind:'day',date,tasks:visible.length,done:visible.filter(t=>t.done===date).length,
+    minutes:Math.floor(r.total/60),checks:tasks.filter(t=>t.kind==='habit'&&t.done===date).length};
 }
 
 export function timeReport(tasks, kind, date, now = new Date()) {

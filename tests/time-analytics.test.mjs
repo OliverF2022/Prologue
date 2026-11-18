@@ -2,10 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { taskFromFields, startTimer, stopTimer, updateTotal, validateTask, normalizeTask } from '../public/task-model.js';
 import { editSession, validateTimeState } from '../public/time-model.js';
-import { timeReport, dayBudget, timeSummary, reviewMarkdown } from '../public/time-analytics.js';
+import { timeReport, dayBudget, timeSummary, reviewMarkdown, dailyStats } from '../public/time-analytics.js';
 
 const at = (day, hour=0, minute=0) => new Date(2026,10,day,hour,minute);
 const now = at(12,12);
+test('today completion denominator matches today and rollover rows, excluding yesterday completions',()=>{
+  const make=(id,date,done=null,kind='task')=>normalizeTask({id,title:id,category:'工作',kind,date,done});
+  const tasks=[make('done-yesterday','2026-11-09','2026-11-11'),make('old-unfinished','2026-10-01'),make('today-unfinished','2026-11-12'),make('today-done','2026-11-12','2026-11-12','habit')];
+  const r=dailyStats(tasks,'2026-11-12',now);
+  assert.equal(r.tasks,3);assert.equal(r.done,1);assert.equal(r.checks,1);assert.equal(r.kind,'day');
+});
 function task(id,title='工作') { return taskFromFields({title,category:'工作',kind:'task'},{id},'2026-11-09',at(9)); }
 function add(t,id,start,end) { return validateTask(updateTotal(editSession(t,{start,end},id,now))); }
 function fixtures() {
