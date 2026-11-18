@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {activeReviews,findReview,reviewDate,reviewStatus,queryReviews,createReview,trashReview,restoreReview,reviewWeeks} from '../public/review-model.js';
+import {activeReviews,findReview,reviewDate,reviewDraft,reviewStatus,queryReviews,createReview,trashReview,restoreReview,reviewWeeks} from '../public/review-model.js';
 import {reviewPage,reviewEditor,reviewMap,reviewResults} from '../public/review-view.js';
 import {normalizeTask} from '../public/task-model.js';
 
@@ -28,6 +28,15 @@ test('explicit creation uses canonical dates and refuses duplicate active period
   assert.equal(next.reviews.at(-1).date,'2026-10-12');assert.equal(next.reviews.at(-1).key,true);
   assert.equal(state.reviews.length,5);assert.equal(next.tasks,state.tasks);
   assert.throws(()=>createReview(next,{kind:'week',date:'2026-10-18'}),/已有复盘/);
+});
+test('opening the same unsaved period retains all draft edits without creating a stored review',()=>{
+  const state=fixture(),before=JSON.stringify(state);
+  const draft={...reviewDraft('week','2026-10-15'),text:'尚未保存的总结',key:true,color:'#aa6788'};
+  assert.equal(draft.date,'2026-10-12');
+  assert.equal(reviewDraft('week','2026-10-18',draft),draft);
+  assert.equal(reviewDraft('month','2026-10-18',draft).text,'');
+  assert.equal(findReview(state.reviews,'week',draft.date),undefined);
+  assert.equal(JSON.stringify(state),before);
 });
 test('delete and restore preserve text, key flag, color, other reviews and all task data across reload',()=>{
   const state=fixture(),before=JSON.stringify(state),deleted=trashReview(state,'key',now);

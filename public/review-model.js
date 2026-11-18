@@ -11,6 +11,10 @@ export function findReview(reviews,kind,date){
   const start=reviewDate(kind,date);
   return activeReviews(reviews).find(r=>r.kind===kind&&reviewDate(r.kind,r.date)===start);
 }
+export function reviewDraft(kind,date,previous){
+  const start=reviewDate(kind,date);
+  return previous?.kind===kind&&previous.date===start?previous:{kind,date:start,text:'',key:false,color:'#65745d'};
+}
 export function reviewStatus(review,start,today=localDay()){
   if(start>today)return 'future';
   if(review?.key)return 'key';

@@ -1,5 +1,5 @@
 import {reviewPage,reviewMap,reviewResults} from './review-view.js';
-import {activeReviews,findReview,reviewDate,queryReviews,createReview,trashReview,restoreReview} from './review-model.js';
+import {activeReviews,findReview,reviewDate,reviewDraft,queryReviews,createReview,trashReview,restoreReview} from './review-model.js';
 import {statisticsPage,statisticsCharts,statisticsDialog,outcomeCards} from './statistics-view.js';
 import { editSession, validateTimeState } from './time-model.js';
 import { todayTimeCharts } from './time-charts.js';
@@ -40,7 +40,7 @@ function openReview(kind,date,id){
   const start=record?.date||reviewDate(kind,date);
   if(reviewUI.draft?.text?.trim()&&(reviewUI.draft.kind!==(record?.kind||kind)||reviewUI.draft.date!==start)&&!confirm('当前草稿尚未保存，放弃草稿并打开其他复盘？'))return;
   reviewUI.year=Number(start.slice(0,4));reviewUI.selectedId=record?.id||null;
-  reviewUI.draft=record?null:{kind,date:start,text:'',key:false,color:'#65745d'};page='复盘空间';render();focusReview();
+  reviewUI.draft=record?null:reviewDraft(kind,start,reviewUI.draft);page='复盘空间';render();focusReview();
 }
 function refreshReviewOverview(){
   if(page!=='复盘空间')return;
