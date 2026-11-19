@@ -175,7 +175,10 @@ try {
             Invoke-Checked 'icacls.exe' @((Join-Path $serviceDirectory 'logs'), '/grant', '*S-1-5-19:(OI)(CI)M')
             Invoke-Checked 'icacls.exe' @($receipt.projectRoot, '/grant', '*S-1-5-19:RX')
             Invoke-Checked 'icacls.exe' @((Join-Path $receipt.projectRoot 'server.mjs'), '/grant', '*S-1-5-19:RX')
+            Invoke-Checked 'icacls.exe' @((Join-Path $receipt.projectRoot 'storage.mjs'), '/grant', '*S-1-5-19:RX')
             Invoke-Checked 'icacls.exe' @((Join-Path $receipt.projectRoot 'public'), '/grant', '*S-1-5-19:(OI)(CI)RX')
+            $distributionDirectory = Join-Path $receipt.projectRoot 'dist'
+            if (Test-Path -LiteralPath $distributionDirectory) { Invoke-Checked 'icacls.exe' @($distributionDirectory, '/grant', '*S-1-5-19:(OI)(CI)RX') }
             Invoke-Checked 'icacls.exe' @($receipt.dataDirectory, '/grant', '*S-1-5-19:(OI)(CI)M')
             Invoke-Checked $wrapper @('install')
         }

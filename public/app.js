@@ -20,7 +20,9 @@ let dailyChartMode='pie',lastChartUpdate=0;
 let statisticsFilters={category:'',subtype:''},statisticsTrigger=null;
 let completedFilters={month:today.slice(0,7),category:'',subtype:'',milestones:false};
 let reviewUI={year:Number(today.slice(0,4)),selectedId:null,draft:null,undoId:null,filters:{kind:'',date:'',keyword:'',status:'',trash:false}},reviewSaveToken=0;
-const pages=['今日记录','已完成事项','统计洞察','复盘空间','关键复盘'];
+let importPage=null;
+let importUI={packet:null,preview:null,choices:{},fileName:'',error:'',result:null,dirty:false};
+const pages=['今日记录','已完成事项','统计洞察','复盘空间','关键复盘','数据导入'];
 $('#today').textContent=today;
 $('#mode-link').textContent=isDemo?'返回正式记录':'查看演示';$('#mode-link').href=isDemo?'/':'/?demo=1';$('#nav').innerHTML=pages.map(p=>`<button data-page="${p}">${p}</button>`).join('');
 
@@ -28,6 +30,7 @@ const summary=s=>`<div class="metrics"><article><small>今日事项完成率</sm
 function render(){ $('#nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));let html=`<h2>${page}</h2>`;
 if(page==='今日记录')html+=dailyPage(state,today,summary(dailyStats(state.tasks,today)),dailyChartMode);
 if(page==='已完成事项')html+=completedPage(state,completedFilters,today);
+if(page==='数据导入')html+=importPage?importPage(state,importUI):'<section>正在加载导入工具…</section>';
 if(page==='统计洞察')html+=statisticsPage(state,period,anchor,statisticsFilters);
 if(page==='复盘空间')html+=reviewPage(state,reviewUI,today);
 if(page==='关键复盘')html+=activeReviews(state.reviews).filter(r=>r.key).map(r=>`<section><a data-jump="${r.id}" href="#r-${r.id}"><span style="color:${esc(r.color)}">●</span> ${r.date} 周复盘 ↗</a><p>${esc(r.text.slice(0,120))}</p><button data-export="${r.id}">导出 Markdown</button></section>`).join('')||'<section>在周复盘中勾选“关键复盘”，把重要的领悟留在这里。</section>';
@@ -113,7 +116,18 @@ document.addEventListener('click', async event => {
       location.reload();return;
     }
     if(data.locateTask){page='今日记录';render();const row=[...document.querySelectorAll('[data-task-id]')].find(el=>el.dataset.taskId===data.locateTask);if(row){row.tabIndex=-1;row.scrollIntoView({block:'center'});row.focus();}}
-    if (data.page) { page = data.page; render(); }
+    if(button.id==='preview-task-import'){await previewTaskImport();return;}
+    if(button.id==='commit-task-import'){
+      if(!importUI.preview||importUI.dirty)throw Error('请先重新预览');
+      button.disabled=true;
+      try{
+        await queue.catch(()=>{});
+        const response=await fetch((isDemo?'/api/demo':'/api')+'/import/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({packet:importUI.packet,choices:importUI.choices,generation:importUI.preview.generation,revision:importUI.preview.revision})});
+        const result=await response.json();if(!response.ok){importUI.preview=null;throw Error(result.error||'导入失败，请重新预览');}
+        state=result.state;stateClient=makeStateClient(state);syncChannel?.postMessage({revision:state.revision});importUI.result=result.counts;importUI.preview=null;importUI.error='';render();
+      }catch(error){importUI.error=error.message;render()}finally{button.disabled=false}return;
+    }
+    if (data.page) { page = data.page;if(page==='数据导入'&&!importPage)({importPage}=await import('./import-view.js'));render(); }
     if(data.reviewWeek)openReview('week',data.reviewWeek);
     if(data.openReview)openReview(null,null,data.openReview);
     if('closeReview' in data){reviewUI.draft=null;reviewUI.selectedId=null;render();}
@@ -249,6 +263,16 @@ document.addEventListener('submit', async event => {
 
 document.addEventListener('change', async event => {
   const el = event.target, data = el.dataset, form = el.form;
+  if(el.id==='task-import-file'){
+    const file=el.files[0];if(!file)return;
+    try{if(file.size>5000000)throw Error('数据包超过 5 MB');importUI={packet:JSON.parse(await file.text()),preview:null,choices:{},fileName:file.name,error:'',result:null,dirty:false};await previewTaskImport();}
+    catch(error){importUI.error=error.message;render()}return;
+  }
+  if(data.importSkip||data.importTarget){
+    const key=data.importSkip||data.importTarget;importUI.choices[key]||={};
+    if(data.importSkip)importUI.choices[key].skip=el.checked;else importUI.choices[key].targetId=el.value;
+    importUI.dirty=true;render();return;
+  }
   if (form && (form.id === 'task-form' || form.dataset.taskEdit)) {
     if (el.name === 'category') {
       form.elements.subtype.value = '';
@@ -342,3 +366,11 @@ function showReviewTooltip(button){
 }
 for(const eventName of ['pointerover','focusin'])document.addEventListener(eventName,event=>{const button=event.target.closest('[data-review-tooltip]');if(button)showReviewTooltip(button);});
 for(const eventName of ['pointerout','focusout'])document.addEventListener(eventName,event=>{const button=event.target.closest('[data-review-tooltip]');if(button&&!button.contains(event.relatedTarget)&&$('#review-week-tooltip'))$('#review-week-tooltip').hidden=true;});
+
+async function previewTaskImport(){
+  try{
+    const response=await fetch((isDemo?'/api/demo':'/api')+'/import/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({packet:importUI.packet,choices:importUI.choices})});
+    const result=await response.json();if(!response.ok)throw Error(result.error||'预览失败');
+    importUI.preview=result;importUI.error='';importUI.result=null;importUI.dirty=false;render();
+  }catch(error){importUI.preview=null;importUI.error=error.message;render();}
+}

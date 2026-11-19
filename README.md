@@ -4,6 +4,8 @@
 
 查看 [演示模式](http://127.0.0.1:3030/?demo=1)：包含最近一个月的假任务、具体用时段、打卡、里程碑、中断与分层复盘。演示内容有醒目标记，使用独立的 `data/demo/store.json`，可自由修改或点击“恢复示例”，不会污染正式记录。页面右上角可返回正式模式。
 
+外出记录可使用 [Windows x64 便携客户端 ZIP](http://127.0.0.1:3030/downloads/Prologue-Capture-win-x64-1.0.0.zip)：解压后双击 `Start.vbs`（或 `Start.cmd`），无需另装运行时或系统服务。客户端只包含事项功能，支持每日手动导出/重置，不顺延。回家在主程序“数据导入”预览并导入 `.prologue.json`，时段和成果进入现有统计。重复文件不会重复累计，冲突明确提示，复盘不受影响。详见 [便携客户端说明](docs/capture-client.md)。
+
 ## 启动
 
 需要 Node.js 24 或更高版本，无需安装第三方依赖。
@@ -40,6 +42,7 @@ node server.mjs
 - 复盘可按周期、所在日期、关键词和填写状态组合查询，结果保留年→月→周层级；年/月复盘中也有下级复盘跳转入口。
 - 新建先打开草稿，点击“保存并创建”才写入；“取消创建”不留下记录。已有复盘继续自动保存。删除移入回收站，可撤销或在回收站恢复，正文、关键标记和颜色保留。
 - 每篇复盘可导出 Markdown，也可导出查询结果或一次导出全部有效复盘。详细规则见 [复盘查询与日历](docs/reviews.md)。
+- 便携记录支持按设备、工作区、事项 ID 和源版本导入去重。默认导入为不顺延的每日历史，保留真实未完成进度；也可在首次导入时手动选择把时段追加到已有长期任务。导入确认采用版本校验和原子保存，预览过期或时段重叠时不写入。
 
 ## 数据
 
@@ -65,6 +68,14 @@ node --check public/app.js
 node --test
 ```
 
+构建 Windows 便携包（复用 `D:\dev` 中的官方 Node.js 24+ x64 目录）：
+
+```powershell
+.\scripts\package-capture.ps1 -NodeDirectory D:\dev\runtimes\node-v24.22.3-win-x64
+```
+
+产物在 `dist/Prologue-Capture-win-x64-1.0.0.zip`，附 SHA256；仅复制程序文件、运行时和说明，不包含任何个人记录。服务运行账户需有 `storage.mjs` 和 `dist` 读取权限，服务安装脚本会配置。
+
 架构与日期规则见 [docs/design.md](docs/design.md)。
 
 ---
@@ -74,6 +85,8 @@ node --test
 Prologue is a local personal daily tracker with task rollover, achievement views, analytics, and hierarchical reviews.
 
 Open [Demo mode](http://127.0.0.1:3030/?demo=1) for a month of clearly labeled synthetic tasks, time intervals, check-ins, milestones, interruptions, and reviews. Demo edits use a separate `data/demo/store.json` and never change real records. “恢复示例” restores the sample dataset; the header link returns to real records.
+
+For offline work elsewhere, download the [Windows x64 portable client](http://127.0.0.1:3030/downloads/Prologue-Capture-win-x64-1.0.0.zip), extract it, and double-click Start.vbs or Start.cmd. Its runtime is bundled; no service installation is needed. The client records daily tasks and intervals, with manual export/reset and no rollover or reviews. Import its .prologue.json files through Data import to include them in existing statistics. Duplicates are skipped and conflicts previewed before atomic import. See [portable-client instructions](docs/capture-client.md).
 
 ### Run locally
 

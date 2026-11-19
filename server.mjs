@@ -1,63 +1,40 @@
 import http from 'node:http';
-import {readFile,writeFile,mkdir,rename} from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
+import {openStore,save,transact} from './storage.mjs';
 import {fileURLToPath} from 'node:url';
 import {resolve,join,dirname} from 'node:path';
-import {randomUUID} from 'node:crypto';
-import {normalizeTask,validateTask} from './public/task-model.js';
-import {validateTimeState} from './public/time-model.js';
 import {createDemoState} from './public/demo-data.js';
+import {planTaskImport} from './public/transfer-model.js';
 
 const root=fileURLToPath(new URL('./',import.meta.url));
 const dataDir=resolve(process.env.DATA_DIR||join(root,'data'));
-async function openStore(file,initial){
-  await mkdir(dirname(file),{recursive:true});
-  let state;
-  try{state=JSON.parse(await readFile(file,'utf8'))}
-  catch(error){if(error.code!=='ENOENT')throw error;state=initial()}
-  state.tasks=state.tasks.map(normalizeTask);state.subtypes||=[];state.generation||=randomUUID();
-  state.revision=Number.isSafeInteger(state.revision)&&state.revision>=0?state.revision:0;
-  return {file,state,writes:Promise.resolve()};
-}
 const main=await openStore(join(dataDir,'store.json'),()=>({categories:['工作','学习','生活'],tasks:[],reviews:[]}));
 let demoPromise;
 function demoStore(){return demoPromise??=openStore(join(dataDir,'demo','store.json'),createDemoState)}
-function validateState(next){
-  if(!Array.isArray(next.tasks)||!Array.isArray(next.categories)||!Array.isArray(next.reviews))throw Error('无效数据');
-  next.tasks=next.tasks.map(t=>validateTask({...normalizeTask(t),progress:t.progress??(t.done?100:0)}));
-  if(next.tasks.filter(t=>t.activeTimer).length>1)throw Error('同时只能为一个事项计时');
-  validateTimeState(next.tasks);
-  next.subtypes||=[];
-  if(!next.categories.every(c=>typeof c==='string'&&c.trim()&&c.length<=80)||!Array.isArray(next.subtypes)||!next.subtypes.every(s=>typeof s.name==='string'&&s.name.trim()&&s.name.length<=80&&next.categories.includes(s.category)))throw Error('无效类型');
-  if(!next.tasks.every(t=>next.categories.includes(t.category)))throw Error('事项主类型不存在');
-}
-async function archive(bucket,state,kind){
-  const folder=join(dirname(bucket.file),'history');await mkdir(folder,{recursive:true});
-  await writeFile(join(folder,`${kind}-${Date.now()}-${randomUUID()}.json`),JSON.stringify(state));
-}
-function save(bucket,next,expectedGeneration,expectedRevision,reset=false){
-  const write=bucket.writes.catch(()=>{}).then(async()=>{
-    if(!reset&&expectedGeneration!==bucket.state.generation){
-      await archive(bucket,next,'rejected-generation');
-      const error=Error('数据已重新初始化，请刷新页面后再操作');error.status=409;error.code='GENERATION_CONFLICT';throw error;
-    }
-    if(!reset&&(!Number.isSafeInteger(expectedRevision)||expectedRevision!==bucket.state.revision)){
-      await archive(bucket,next,'rejected-write');
-      const error=Error(Number.isSafeInteger(expectedRevision)?'其他标签页已更新记录，请合并最新数据后保存':'页面版本过旧，提交内容已留存，请刷新页面后操作');
-      error.status=409;error.code=Number.isSafeInteger(expectedRevision)?'REVISION_CONFLICT':'CLIENT_UPGRADE_REQUIRED';error.state=bucket.state;throw error;
-    }
-    validateState(next);
-    await archive(bucket,bucket.state,'before-write');
-    next.revision=bucket.state.revision+1;
-    await writeFile(bucket.file+'.tmp',JSON.stringify(next));await rename(bucket.file+'.tmp',bucket.file);bucket.state=next;
-    return next;
-  });
-  bucket.writes=write;return write;
-}
-const files={'/':'index.html','/app.js':'app.js','/task-model.js':'task-model.js','/task-view.js':'task-view.js','/style.css':'style.css','/time-model.js':'time-model.js','/time-analytics.js':'time-analytics.js','/time-charts.js':'time-charts.js','/statistics-view.js':'statistics-view.js','/review-model.js':'review-model.js','/review-view.js':'review-view.js','/state-sync.js':'state-sync.js'};
+const files={'/':'index.html','/app.js':'app.js','/task-model.js':'task-model.js','/task-view.js':'task-view.js','/style.css':'style.css','/time-model.js':'time-model.js','/time-analytics.js':'time-analytics.js','/time-charts.js':'time-charts.js','/statistics-view.js':'statistics-view.js','/review-model.js':'review-model.js','/review-view.js':'review-view.js','/state-sync.js':'state-sync.js','/transfer-model.js':'transfer-model.js','/import-view.js':'import-view.js'};
 const server=http.createServer(async(req,res)=>{
   try{
     const path=new URL(req.url,'http://127.0.0.1').pathname;
     res.setHeader('Cache-Control','no-store');
+    if(path==='/downloads/Prologue-Capture-win-x64-1.0.0.zip'){
+      try{const bytes=await readFile(join(root,'dist','Prologue-Capture-win-x64-1.0.0.zip'));res.setHeader('Content-Type','application/zip');res.setHeader('Content-Disposition','attachment; filename="Prologue-Capture-win-x64-1.0.0.zip"');return res.end(bytes)}
+      catch(error){if(error.code!=='ENOENT')throw error;res.writeHead(404);return res.end('Portable package has not been built yet.')}
+    }
+    if(/^\/api\/(demo\/)?import\/(preview|commit)$/.test(path)){
+      res.setHeader('Content-Type','application/json; charset=utf-8');
+      if(req.method!=='POST'){res.writeHead(405);return res.end('{}')}
+      if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`){res.writeHead(403);return res.end('{}')}
+      let raw='';for await(const chunk of req){raw+=chunk;if(Buffer.byteLength(raw)>5000000)throw Error('数据包超过 5 MB')}
+      const input=JSON.parse(raw),bucket=path.includes('/demo/')?await demoStore():main;
+      if(path.endsWith('/preview')){
+        const {state,...preview}=planTaskImport(bucket.state,input.packet,input.choices);
+        return res.end(JSON.stringify({...preview,generation:bucket.state.generation,revision:bucket.state.revision}));
+      }
+      const result=await transact(bucket,{generation:input.generation,revision:input.revision},current=>{
+        const plan=planTaskImport(current,input.packet,input.choices);if(!plan.canImport)throw Error('存在未处理的冲突，请调整选择并重新预览');
+        return {state:plan.state,changed:plan.changed,counts:plan.counts};
+      });return res.end(JSON.stringify(result));
+    }
     if(['/api/state','/api/demo/state','/api/demo/reset'].includes(path)){
       res.setHeader('Content-Type','application/json; charset=utf-8');
       const bucket=path==='/api/state'?main:await demoStore();
@@ -68,6 +45,7 @@ const server=http.createServer(async(req,res)=>{
       if(reset){const next=createDemoState();await save(bucket,next,undefined,undefined,true);return res.end(JSON.stringify(next))}
       let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>5000000)throw Error('数据过大')}
       const next=JSON.parse(raw);
+      if(bucket.state.importLog)next.importLog=bucket.state.importLog;
       // Keep demo ownership explicit even when someone edits the JSON payload.
       if(bucket!==main){next.demo=true;next.demoAnchorDate=bucket.state.demoAnchorDate}
       const saved=await save(bucket,next,next.generation,next.revision);return res.end(JSON.stringify(saved));

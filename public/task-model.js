@@ -188,7 +188,7 @@ export function setDailyTime(task, date, hours, minutes, today) {
 }
 
 export function todayTasks(tasks, today) {
-  return tasks.filter(t => t.started <= today && (!t.done || t.done === today));
+  return tasks.filter(t => t.started <= today && (t.rollover===false?t.date===today:(!t.done || t.done === today)));
 }
 
 export function periodBounds(kind, date) {
